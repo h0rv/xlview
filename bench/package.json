@@ -1,0 +1,16 @@
+{
+  "name": "xlview-bench",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "bench": "playwright test -c playwright.config.ts",
+    "bench:ui": "playwright test -c playwright.config.ts --ui",
+    "bench:debug": "playwright test -c playwright.config.ts --debug",
+    "summary": "bun summarize.mjs"
+  },
+  "devDependencies": {
+    "@playwright/test": "^1.58.0",
+    "playwright": "^1.58.0",
+    "xlsx": "latest"
+  }
+}

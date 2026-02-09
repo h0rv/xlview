@@ -1,0 +1,51 @@
+set dotenv-load
+
+# Defaults (override via `just VAR=value target`)
+ITERATIONS := "7"
+WARMUP := "2"
+DATASET := "all"
+PROVIDERS := "xlview sheetjs"
+SCROLL_STEPS := "8"
+SCROLL_STEP_PX := "160"
+SUMMARY_LAST := "5"
+
+default:
+    @just --list
+
+install:
+    bun install
+    bunx playwright install chromium
+
+build:
+    @cd .. && wasm-pack build --target web --release
+
+bench provider: build
+    @echo "==> provider={{provider}}"
+    BENCH_PROVIDER={{provider}} \
+    BENCH_ITERATIONS={{ITERATIONS}} \
+    BENCH_WARMUP={{WARMUP}} \
+    BENCH_DATASET={{DATASET}} \
+    BENCH_SCROLL_STEPS={{SCROLL_STEPS}} \
+    BENCH_SCROLL_STEP_PX={{SCROLL_STEP_PX}} \
+    bun run bench
+    bun run summary -- --compare --last {{SUMMARY_LAST}}
+
+bench-all: build
+    @for provider in {{PROVIDERS}}; do \
+        echo "==> provider=$provider"; \
+        BENCH_PROVIDER=$provider \
+        BENCH_ITERATIONS={{ITERATIONS}} \
+        BENCH_WARMUP={{WARMUP}} \
+        BENCH_DATASET={{DATASET}} \
+        BENCH_SCROLL_STEPS={{SCROLL_STEPS}} \
+        BENCH_SCROLL_STEP_PX={{SCROLL_STEP_PX}} \
+        bun run bench; \
+    done
+    bun run summary -- --csv
+    bun run summary -- --compare --last {{SUMMARY_LAST}}
+
+summary:
+    bun run summary -- --compare --last {{SUMMARY_LAST}}
+
+csv:
+    bun run summary -- --csv

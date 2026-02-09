@@ -1,0 +1,189 @@
+[package]
+name = "xlview"
+version = "0.1.0"
+edition = "2021"
+license = "MIT"
+description = "XLSX viewer — parses and renders Excel files via WebAssembly and Canvas 2D"
+repository = "https://github.com/h0rv/xlview"
+homepage = "https://github.com/h0rv/xlview"
+documentation = "https://docs.rs/xlview"
+readme = "README.md"
+keywords = ["xlsx", "excel", "spreadsheet", "wasm", "viewer"]
+categories = ["parsing", "wasm", "web-programming"]
+exclude = [
+    # Development tooling
+    "bench/",
+    "docs/",
+    "scripts/",
+    ".github/",
+
+    # Test assets (large binaries)
+    "test/",
+    "tests/",
+
+    # Demo/dev files
+    "compare.html",
+    "index.html",
+    "justfile",
+    "verify_comments.ts",
+    "verify_comments.js",
+    "build.mjs",
+    "tsconfig.json",
+    "src/demo/",
+
+    # Node.js/Playwright (npm package is separate)
+    "package.json",
+    "package-lock.json",
+    "playwright.config.ts",
+    "node_modules/",
+
+    # Generated/temp
+    "pkg/",
+    "target/",
+
+    # Internal docs
+    "COVERAGE.md",
+    "PUBLISHING.md",
+    "SPEC.md",
+    "TESTING.md",
+]
+
+[lib]
+crate-type = ["cdylib", "rlib"]
+
+[[bin]]
+name = "xlview_cli"
+path = "src/bin/xlview_cli.rs"
+
+[dependencies]
+# Parsing
+zip = { version = "0.6", default-features = false, features = ["deflate"] }
+quick-xml = "0.31"
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+base64 = "0.22"
+
+# WASM bindings (latest versions as of Jan 2026)
+wasm-bindgen = "0.2.108"
+wasm-bindgen-futures = "0.4"
+serde-wasm-bindgen = "0.6"
+js-sys = "0.3.83"
+
+# Error handling
+thiserror = "1.0"
+
+# Better panic messages in WASM
+console_error_panic_hook = "0.1"
+
+# Random for wasm32
+[target.'cfg(target_arch = "wasm32")'.dependencies]
+getrandom = { version = "0.2", features = ["js"] }
+
+[dependencies.web-sys]
+version = "0.3.83"
+features = [
+    # Core DOM
+    "Window",
+    "Document",
+    "Element",
+    "CssStyleDeclaration",
+    "Node",
+
+    # Canvas 2D rendering
+    "HtmlCanvasElement",
+    "HtmlImageElement",
+    "CanvasRenderingContext2d",
+    "CanvasPattern",
+    "TextMetrics",
+
+    # Events
+    "Event",
+    "MouseEvent",
+    "WheelEvent",
+    "KeyboardEvent",
+    "ResizeObserver",
+    "ResizeObserverEntry",
+    "ResizeObserverSize",
+    "DomRectReadOnly",
+    "DomRect",
+    "HtmlElement",
+    "HtmlDivElement",
+    "EventTarget",
+    "AddEventListenerOptions",
+
+    # Utilities
+    "Performance",
+    "Navigator",
+    "console",
+
+    # Clipboard API
+    "Clipboard",
+]
+
+[dev-dependencies]
+wasm-bindgen-test = "0.3"
+criterion = { version = "0.5", features = ["html_reports"] }
+test-case = "3.3"
+
+[[bench]]
+name = "parsing"
+harness = false
+
+[profile.release]
+opt-level = "s"
+lto = true
+codegen-units = 1
+panic = "abort"
+strip = true
+
+[profile.release.package."*"]
+opt-level = "s"
+
+[package.metadata.wasm-pack.profile.release]
+wasm-opt = false
+
+[lints.rust]
+unsafe_code = "forbid"
+unused_must_use = "deny"
+
+[lints.clippy]
+# Correctness - these are bugs
+unwrap_used = "deny"
+expect_used = "deny"
+panic = "deny"
+unreachable = "deny"
+indexing_slicing = "deny"
+unwrap_in_result = "deny"
+panic_in_result_fn = "deny"
+exit = "deny"
+todo = "deny"
+unimplemented = "deny"
+dbg_macro = "deny"
+
+# Suspicious - likely bugs
+cast_possible_truncation = "deny"
+cast_sign_loss = "deny"
+cast_possible_wrap = "deny"
+float_cmp = "deny"
+imprecise_flops = "deny"
+lossy_float_literal = "deny"
+
+# Style that hides bugs
+implicit_clone = "warn"
+clone_on_ref_ptr = "warn"
+redundant_clone = "warn"
+large_stack_arrays = "warn"
+large_types_passed_by_value = "warn"
+
+# Error handling
+result_large_err = "warn"
+error_impl_error = "deny"
+
+# Pedantic subset (useful ones)
+needless_pass_by_value = "warn"
+cloned_instead_of_copied = "warn"
+flat_map_option = "warn"
+filter_map_next = "warn"
+manual_let_else = "warn"
+manual_ok_or = "warn"
+inefficient_to_string = "warn"

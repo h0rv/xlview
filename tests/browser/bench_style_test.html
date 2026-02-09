@@ -1,0 +1,188 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Bench-style Header Test</title>
+  <style>
+    /* Exact CSS from bench.html */
+    :root {
+      color-scheme: light;
+    }
+    * {
+      box-sizing: border-box;
+    }
+    body {
+      margin: 0;
+      font-family: ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      background: #0f1115;
+      color: #e6e6e6;
+      padding: 16px;
+    }
+    #viewer-container {
+      background: #0b0d12;
+      border: 1px solid #1f2531;
+      border-radius: 8px;
+      overflow: hidden;
+      position: relative;
+      height: 420px;
+      width: 1024px;
+      max-width: 100%;
+    }
+    #viewer-canvas {
+      width: 100%;
+      height: 100%;
+      display: block;
+      position: absolute;
+      inset: 0;
+    }
+    /* Disable animations for testing */
+    #viewer-container * {
+      animation: none !important;
+      transition: none !important;
+    }
+    #debug {
+      margin-top: 16px;
+      background: #1a1d24;
+      padding: 12px;
+      border-radius: 4px;
+      font-family: monospace;
+      font-size: 12px;
+      white-space: pre-wrap;
+    }
+    h3 {
+      margin: 0 0 12px 0;
+      font-size: 14px;
+    }
+  </style>
+</head>
+<body>
+  <h3>Bench-style test (exact CSS from bench.html)</h3>
+  <div id="viewer-container">
+    <canvas id="viewer-canvas"></canvas>
+  </div>
+  <div id="debug">Loading...</div>
+
+  <script type="module">
+    const canvas = document.getElementById('viewer-canvas');
+    const container = document.getElementById('viewer-container');
+    const debugEl = document.getElementById('debug');
+
+    function log(msg) {
+      debugEl.textContent += msg + '\n';
+      console.log(msg);
+    }
+
+    async function init() {
+      debugEl.textContent = '';
+
+      try {
+        log('Loading WASM...');
+        const wasm = await import('/pkg/xlview.js');
+        await wasm.default();
+        log('WASM loaded');
+
+        const dpr = window.devicePixelRatio || 1;
+        const rect = container.getBoundingClientRect();
+        const width = container.clientWidth || rect.width;
+        const height = container.clientHeight || rect.height;
+        log(`Container: ${rect.width}x${rect.height}, DPR: ${dpr}`);
+
+        // Set canvas size BEFORE creating viewer (like bench.js does)
+        canvas.width = Math.floor(width * dpr);
+        canvas.height = Math.floor(height * dpr);
+        canvas.style.width = `${width}px`;
+        canvas.style.height = `${height}px`;
+        log(`Canvas physical: ${canvas.width}x${canvas.height}`);
+        log(`Canvas CSS: ${canvas.style.width}x${canvas.style.height}`);
+
+        log('Creating XlView...');
+        const viewer = new wasm.XlView(canvas, dpr);
+        viewer.resize(canvas.width, canvas.height, dpr);
+        log('XlView created');
+
+        // Recompute size after native scroll container is created.
+        {
+          await new Promise(requestAnimationFrame);
+          const parent = document.querySelector('[data-xlview-scroll]') || canvas.parentElement || container;
+          const parentRect = parent.getBoundingClientRect();
+          const parentWidth = parent.clientWidth || parentRect.width;
+          const parentHeight = parent.clientHeight || parentRect.height;
+          const nextWidth = Math.floor(parentWidth * dpr);
+          const nextHeight = Math.floor(parentHeight * dpr);
+          if (canvas.width !== nextWidth || canvas.height !== nextHeight) {
+            canvas.width = nextWidth;
+            canvas.height = nextHeight;
+            canvas.style.width = `${parentWidth}px`;
+            canvas.style.height = `${parentHeight}px`;
+            viewer.resize(canvas.width, canvas.height, dpr);
+            log(`Canvas resized after native scroll: ${canvas.width}x${canvas.height}`);
+          }
+        }
+
+        // Expose a resize hook for automated tests.
+        window.force_resize = () => {
+          const parent = document.querySelector('[data-xlview-scroll]') || canvas.parentElement || container;
+          const parentRect = parent.getBoundingClientRect();
+          const parentWidth = parent.clientWidth || parentRect.width;
+          const parentHeight = parent.clientHeight || parentRect.height;
+          const nextWidth = Math.floor(parentWidth * dpr);
+          const nextHeight = Math.floor(parentHeight * dpr);
+          if (canvas.width !== nextWidth || canvas.height !== nextHeight) {
+            canvas.width = nextWidth;
+            canvas.height = nextHeight;
+            canvas.style.width = `${parentWidth}px`;
+            canvas.style.height = `${parentHeight}px`;
+            viewer.resize(canvas.width, canvas.height, dpr);
+          }
+        };
+
+        // Check canvas style after XlView modifies DOM
+        log(`Canvas position after XlView: ${canvas.style.position}`);
+        log(`Canvas top: ${canvas.style.top}`);
+        log(`Canvas inset: ${canvas.style.inset}`);
+
+        // Load test file
+        log('Loading test file...');
+        const response = await fetch('/test/kitchen_sink.xlsx');
+        const buffer = await response.arrayBuffer();
+        viewer.load(new Uint8Array(buffer));
+        viewer.render();
+        log('File loaded and rendered');
+
+        // Get debug info
+        const debug = viewer.get_scroll_debug();
+        log(`\nScroll debug:`);
+        log(`  viewport_scroll: (${debug.viewport_scroll_x}, ${debug.viewport_scroll_y})`);
+        log(`  viewport_size: (${debug.viewport_width}, ${debug.viewport_height})`);
+        log(`  visible_rows: ${debug.visible_start_row} - ${debug.visible_end_row}`);
+        log(`  show_headers: ${debug.show_headers}`);
+
+        const headerConfig = viewer.get_header_config();
+        log(`\nHeader config:`);
+        log(`  visible: ${headerConfig.visible}`);
+        log(`  col_header_height: ${headerConfig.col_header_height}`);
+        log(`  row_header_width: ${headerConfig.row_header_width}`);
+
+        // Check if headers should be visible
+        if (debug.show_headers && headerConfig.col_header_height > 0) {
+          log('\n✓ Headers SHOULD be rendering');
+          log('  Column headers at y: 0 to ' + headerConfig.col_header_height);
+          log('  Row headers at x: 0 to ' + headerConfig.row_header_width);
+        } else {
+          log('\n✗ Headers NOT configured to render!');
+        }
+
+        window.viewer = viewer;
+        window.wasm = wasm;
+
+      } catch (e) {
+        log('ERROR: ' + e.message);
+        console.error(e);
+      }
+    }
+
+    init();
+  </script>
+</body>
+</html>

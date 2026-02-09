@@ -1,0 +1,361 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Scroll/Header Debug Test</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+      padding: 20px;
+      background: #f5f5f5;
+    }
+    h1 { font-size: 18px; margin-bottom: 16px; }
+    .test-container {
+      display: grid;
+      grid-template-columns: 1fr 400px;
+      gap: 20px;
+    }
+    #viewer-container {
+      width: 100%;
+      height: 600px;
+      position: relative;
+      background: white;
+      border: 1px solid #ccc;
+      border-radius: 4px;
+      overflow: hidden;
+    }
+    #canvas {
+      position: absolute;
+      inset: 0;
+    }
+    .debug-panel {
+      background: white;
+      border: 1px solid #ccc;
+      border-radius: 4px;
+      padding: 16px;
+    }
+    .debug-panel h2 {
+      font-size: 14px;
+      margin-bottom: 12px;
+      color: #333;
+    }
+    .debug-info {
+      font-family: 'Monaco', 'Consolas', monospace;
+      font-size: 12px;
+      background: #f8f8f8;
+      padding: 12px;
+      border-radius: 4px;
+      white-space: pre-wrap;
+      max-height: 400px;
+      overflow: auto;
+    }
+    .controls {
+      margin-bottom: 16px;
+      display: flex;
+      gap: 8px;
+      flex-wrap: wrap;
+    }
+    button {
+      padding: 8px 16px;
+      background: #4a90d9;
+      color: white;
+      border: none;
+      border-radius: 4px;
+      cursor: pointer;
+      font-size: 13px;
+    }
+    button:hover { background: #357abd; }
+    button:disabled { background: #ccc; cursor: not-allowed; }
+    .test-result {
+      padding: 8px 12px;
+      border-radius: 4px;
+      margin-top: 12px;
+      font-size: 13px;
+    }
+    .test-result.pass { background: #d4edda; color: #155724; }
+    .test-result.fail { background: #f8d7da; color: #721c24; }
+    input[type="file"] { font-size: 13px; }
+    .status { font-size: 13px; color: #666; margin-top: 8px; }
+  </style>
+</head>
+<body>
+  <h1>xlview Scroll/Header Debug Test</h1>
+
+  <div class="controls">
+    <input type="file" id="file-input" accept=".xlsx,.xls">
+    <button id="btn-load-test">Load Test File</button>
+    <button id="btn-run-tests" disabled>Run Tests</button>
+    <button id="btn-scroll-down" disabled>Scroll Down 100px</button>
+    <button id="btn-reset-scroll" disabled>Reset Scroll</button>
+    <button id="btn-refresh-debug" disabled>Refresh Debug</button>
+  </div>
+
+  <div class="test-container">
+    <div id="viewer-container">
+      <canvas id="canvas"></canvas>
+    </div>
+    <div class="debug-panel">
+      <h2>Scroll Debug Info</h2>
+      <div id="debug-info" class="debug-info">Loading WASM module...</div>
+      <div id="test-results"></div>
+      <div id="status" class="status"></div>
+    </div>
+  </div>
+
+  <script type="module">
+    let viewer = null;
+    let wasm = null;
+
+    // Expose to window for testing
+    Object.defineProperty(window, 'viewer', {
+      get() { return viewer; },
+      set(v) { viewer = v; }
+    });
+    Object.defineProperty(window, 'wasm', {
+      get() { return wasm; },
+      set(v) { wasm = v; }
+    });
+
+    const canvas = document.getElementById('canvas');
+    const container = document.getElementById('viewer-container');
+    const debugInfo = document.getElementById('debug-info');
+    const testResults = document.getElementById('test-results');
+    const statusEl = document.getElementById('status');
+    const fileInput = document.getElementById('file-input');
+    const btnLoadTest = document.getElementById('btn-load-test');
+    const btnRunTests = document.getElementById('btn-run-tests');
+    const btnScrollDown = document.getElementById('btn-scroll-down');
+    const btnResetScroll = document.getElementById('btn-reset-scroll');
+    const btnRefreshDebug = document.getElementById('btn-refresh-debug');
+
+    function setStatus(msg) {
+      statusEl.textContent = msg;
+    }
+
+    function updateDebug() {
+      if (!viewer) {
+        debugInfo.textContent = 'Viewer not initialized';
+        return null;
+      }
+      try {
+        const debug = viewer.get_scroll_debug();
+        debugInfo.textContent = JSON.stringify(debug, null, 2);
+        return debug;
+      } catch (e) {
+        debugInfo.textContent = 'Error: ' + e.message;
+        return null;
+      }
+    }
+
+    function addTestResult(name, passed, details) {
+      const div = document.createElement('div');
+      div.className = 'test-result ' + (passed ? 'pass' : 'fail');
+      div.innerHTML = '<strong>' + (passed ? '✓' : '✗') + ' ' + name + '</strong><br>' + details;
+      testResults.appendChild(div);
+    }
+
+    function clearTestResults() {
+      testResults.innerHTML = '';
+    }
+
+    async function initViewer() {
+      try {
+        setStatus('Loading WASM module...');
+        // Try different paths
+        const paths = [
+          '../../pkg/xlview.js',
+          '/pkg/xlview.js',
+          '../../../pkg/xlview.js'
+        ];
+
+        let loadedWasm = null;
+        for (const path of paths) {
+          try {
+            loadedWasm = await import(path);
+            await loadedWasm.default();
+            setStatus('WASM loaded from: ' + path);
+            break;
+          } catch (e) {
+            console.log('Failed to load from', path, e.message);
+          }
+        }
+
+        if (!loadedWasm) {
+          throw new Error('Could not load WASM module from any path');
+        }
+
+        wasm = loadedWasm;
+
+        const dpr = window.devicePixelRatio || 1;
+        const rect = container.getBoundingClientRect();
+        const width = container.clientWidth || rect.width;
+        const height = container.clientHeight || rect.height;
+
+        canvas.width = Math.floor(width * dpr);
+        canvas.height = Math.floor(height * dpr);
+        canvas.style.width = width + 'px';
+        canvas.style.height = height + 'px';
+
+        viewer = new wasm.XlView(canvas, dpr);
+        viewer.resize(canvas.width, canvas.height, dpr);
+
+        setStatus('Viewer initialized. Load a file to test.');
+        debugInfo.textContent = 'Viewer ready. Load a file to see debug info.';
+
+        return viewer;
+      } catch (e) {
+        setStatus('Error: ' + e.message);
+        debugInfo.textContent = 'Error initializing: ' + e.message + '\n\nMake sure you are serving this from a web server (not file://)';
+        throw e;
+      }
+    }
+
+    async function loadFile(bytes) {
+      if (!viewer) {
+        await initViewer();
+      }
+      setStatus('Loading file...');
+      viewer.load(bytes);
+      viewer.render();
+      setStatus('File loaded. Check debug info.');
+      updateDebug();
+
+      // Enable buttons
+      btnRunTests.disabled = false;
+      btnScrollDown.disabled = false;
+      btnResetScroll.disabled = false;
+      btnRefreshDebug.disabled = false;
+    }
+
+    async function loadTestFile() {
+      try {
+        // Try to load a test file from fixtures
+        const paths = [
+          '/fixtures/kitchen_sink.xlsx',
+          '../../fixtures/kitchen_sink.xlsx',
+          '../../../fixtures/kitchen_sink.xlsx',
+          '/bench/fixtures/kitchen_sink.xlsx'
+        ];
+
+        for (const path of paths) {
+          try {
+            const response = await fetch(path);
+            if (response.ok) {
+              const buffer = await response.arrayBuffer();
+              await loadFile(new Uint8Array(buffer));
+              setStatus('Loaded: ' + path);
+              return;
+            }
+          } catch (e) {
+            console.log('Failed to load from', path);
+          }
+        }
+        setStatus('Could not load test file. Please use file picker.');
+      } catch (e) {
+        setStatus('Error: ' + e.message);
+      }
+    }
+
+    function runTests() {
+      clearTestResults();
+      const debug = updateDebug();
+      if (!debug) {
+        addTestResult('Get Debug Info', false, 'Could not get debug info');
+        return;
+      }
+
+      // Test 1: Initial scroll should be at frozen boundary (0,0 for no frozen panes)
+      const frozenX = debug.frozen_cols_width || 0;
+      const frozenY = debug.frozen_rows_height || 0;
+      const scrollOkX = Math.abs(debug.viewport_scroll_x - frozenX) < 0.1;
+      const scrollOkY = Math.abs(debug.viewport_scroll_y - frozenY) < 0.1;
+      addTestResult(
+        'Initial Scroll Position',
+        scrollOkX && scrollOkY,
+        'Expected: (' + frozenX + ', ' + frozenY + ')\\n' +
+        'Actual: (' + debug.viewport_scroll_x + ', ' + debug.viewport_scroll_y + ')'
+      );
+
+      // Test 2: Container scroll should be 0,0 initially
+      const containerOk = debug.container_scroll_left === 0 && debug.container_scroll_top === 0;
+      addTestResult(
+        'Container Scroll at 0,0',
+        containerOk,
+        'container_scroll_left: ' + debug.container_scroll_left + '\\n' +
+        'container_scroll_top: ' + debug.container_scroll_top
+      );
+
+      // Test 3: Visible start row should be 0 (or frozen_rows if there are frozen panes)
+      const expectedStartRow = Math.floor(frozenY / 20); // Approximate
+      const startRowOk = debug.visible_start_row <= expectedStartRow + 1;
+      addTestResult(
+        'First Visible Row',
+        startRowOk,
+        'Expected: ' + expectedStartRow + ' (or close)\\n' +
+        'Actual: ' + debug.visible_start_row + '\\n' +
+        (debug.visible_start_row >= 25 ? '⚠️ ROW 30 BUG DETECTED!' : '')
+      );
+
+      // Test 4: Headers should be visible
+      addTestResult(
+        'Headers Visible',
+        debug.show_headers === true,
+        'show_headers: ' + debug.show_headers
+      );
+
+      // Summary
+      const allPassed = scrollOkX && scrollOkY && containerOk && startRowOk && debug.show_headers;
+      setStatus(allPassed ? 'All tests passed!' : 'Some tests failed - see results');
+    }
+
+    // Event handlers
+    fileInput.addEventListener('change', async (e) => {
+      const file = e.target.files[0];
+      if (file) {
+        const buffer = await file.arrayBuffer();
+        await loadFile(new Uint8Array(buffer));
+      }
+    });
+
+    btnLoadTest.addEventListener('click', loadTestFile);
+    btnRunTests.addEventListener('click', runTests);
+    btnScrollDown.addEventListener('click', () => {
+      if (viewer) {
+        viewer.scroll(0, 100);
+        viewer.render();
+        updateDebug();
+      }
+    });
+    btnResetScroll.addEventListener('click', () => {
+      if (viewer) {
+        viewer.set_scroll(0, 0);
+        viewer.render();
+        updateDebug();
+      }
+    });
+    btnRefreshDebug.addEventListener('click', updateDebug);
+
+    // Handle resize
+    window.addEventListener('resize', () => {
+      if (viewer) {
+        const dpr = window.devicePixelRatio || 1;
+        const rect = container.getBoundingClientRect();
+        const width = container.clientWidth || rect.width;
+        const height = container.clientHeight || rect.height;
+        canvas.width = Math.floor(width * dpr);
+        canvas.height = Math.floor(height * dpr);
+        canvas.style.width = width + 'px';
+        canvas.style.height = height + 'px';
+        viewer.resize(canvas.width, canvas.height, dpr);
+        viewer.render();
+        updateDebug();
+      }
+    });
+
+    // Auto-init
+    initViewer().catch(e => console.error('Init error:', e));
+  </script>
+</body>
+</html>

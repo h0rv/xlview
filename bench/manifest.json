@@ -1,0 +1,58 @@
+[
+  {
+    "id": "minimal",
+    "label": "Minimal",
+    "file": "/test/minimal.xlsx",
+    "size": "3.3KB",
+    "tags": ["small", "values"]
+  },
+  {
+    "id": "styled",
+    "label": "Styled",
+    "file": "/test/styled.xlsx",
+    "size": "3.6KB",
+    "tags": ["small", "styles", "multi-sheet"]
+  },
+  {
+    "id": "colors_test",
+    "label": "Colors",
+    "file": "/test/colors_test.xlsx",
+    "size": "5.8KB",
+    "tags": ["small", "colors"]
+  },
+  {
+    "id": "test_comments",
+    "label": "Comments",
+    "file": "/test/test_comments.xlsx",
+    "size": "6.9KB",
+    "tags": ["small", "comments"]
+  },
+  {
+    "id": "kitchen_sink",
+    "label": "Kitchen Sink",
+    "file": "/test/kitchen_sink.xlsx",
+    "size": "11.4KB",
+    "tags": ["medium", "styles", "merges"]
+  },
+  {
+    "id": "kitchen_sink_v2",
+    "label": "Kitchen Sink v2",
+    "file": "/test/kitchen_sink_v2.xlsx",
+    "size": "18KB",
+    "tags": ["medium", "images", "charts", "conditional-formatting"]
+  },
+  {
+    "id": "ms_cf_samples",
+    "label": "MS CF Samples",
+    "file": "/test/ms_cf_samples.xlsx",
+    "size": "635KB",
+    "tags": ["large", "conditional-formatting"]
+  },
+  {
+    "id": "large_5000x20",
+    "label": "Large 5000x20",
+    "file": "/test/large_5000x20.xlsx",
+    "size": "1.1MB",
+    "tags": ["large", "wide"]
+  }
+]

@@ -1,0 +1,37 @@
+# Build artifacts
+/target
+/pkg/
+/www/pkg/
+
+# Node
+node_modules/
+bun.lock
+
+# Playwright
+/tests/test-results/
+/tests/playwright-report/
+/playwright-report/
+/test-results/
+.playwright-mcp
+
+# Bench artifacts
+bench/results/
+bench/bench.html
+bench/test-results/
+
+# esbuild compiled JS (source is .ts)
+src/demo/*.js
+src/demo/*.js.map
+bench/bench.js
+bench/bench.js.map
+bench/providers/*.js
+bench/providers/*.js.map
+tests/browser/run_scroll_test.js
+tests/browser/run_scroll_test.js.map
+
+# Test artifacts (but keep visual regression baselines)
+*.png
+!tests/snapshots/**/*.png
+
+# OS
+.DS_Store

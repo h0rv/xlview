@@ -1,0 +1,173 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Index-style Scroll/Header Test</title>
+  <style>
+    @import url('https://fonts.googleapis.com/css2?family=Roboto:wght@400;700&display=swap');
+
+    * {
+      box-sizing: border-box;
+    }
+
+    html, body {
+      height: 100%;
+      margin: 0;
+    }
+
+    body {
+      font-family: 'Roboto', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+      padding: 16px;
+      background: #f5f5f5;
+      display: flex;
+      flex-direction: column;
+    }
+
+    h1 {
+      margin: 0 0 12px 0;
+      color: #333;
+      font-size: 16px;
+      flex-shrink: 0;
+    }
+
+    #viewer-container {
+      background: #fff;
+      border: 1px solid #ddd;
+      overflow: hidden;
+      flex: 1;
+      min-height: 0;
+      position: relative;
+      height: 600px;
+    }
+
+    #viewer-canvas,
+    #viewer-overlay {
+      position: absolute;
+      top: 0;
+      left: 0;
+      display: block;
+      width: 100%;
+      height: 100%;
+    }
+
+    #viewer-overlay {
+      pointer-events: none;
+    }
+
+    #debug {
+      margin-top: 8px;
+      font-family: monospace;
+      font-size: 11px;
+      background: #fff;
+      border: 1px solid #ddd;
+      padding: 8px;
+      white-space: pre-wrap;
+      max-height: 200px;
+      overflow: auto;
+    }
+  </style>
+</head>
+<body>
+  <h1>Index-style test (matches index.html CSS + overlay)</h1>
+  <div id="viewer-container">
+    <canvas id="viewer-canvas"></canvas>
+    <canvas id="viewer-overlay"></canvas>
+  </div>
+  <div id="debug">Loading...</div>
+
+  <script type="module">
+    import init, { XlView } from '/pkg/xlview.js';
+
+    const debugEl = document.getElementById('debug');
+    const canvas = document.getElementById('viewer-canvas');
+    const overlayCanvas = document.getElementById('viewer-overlay');
+    const viewerContainer = document.getElementById('viewer-container');
+
+    let viewer = null;
+    let renderPending = false;
+
+    function log(msg) {
+      debugEl.textContent += msg + '\n';
+      console.log(msg);
+    }
+
+    function resizeCanvas() {
+      const target = document.querySelector('[data-xlview-scroll]') || canvas.parentElement || viewerContainer;
+      const rect = target.getBoundingClientRect();
+      const width = target.clientWidth || rect.width;
+      const height = target.clientHeight || rect.height;
+      const dpr = window.devicePixelRatio || 1;
+
+      canvas.width = Math.max(1, Math.round(width * dpr));
+      canvas.height = Math.max(1, Math.round(height * dpr));
+      overlayCanvas.width = canvas.width;
+      overlayCanvas.height = canvas.height;
+
+      canvas.style.width = width + 'px';
+      canvas.style.height = height + 'px';
+      overlayCanvas.style.width = width + 'px';
+      overlayCanvas.style.height = height + 'px';
+
+      const effectiveDpr = width > 0 ? canvas.width / width : dpr;
+      if (viewer) {
+        viewer.resize(canvas.width, canvas.height, effectiveDpr);
+      }
+      return effectiveDpr;
+    }
+
+    window.force_resize = resizeCanvas;
+
+    function requestRender() {
+      if (renderPending) return;
+      renderPending = true;
+      requestAnimationFrame(() => {
+        renderPending = false;
+        if (viewer) {
+          try {
+            viewer.render();
+          } catch (e) {
+            console.error('Render error:', e);
+          }
+        }
+      });
+    }
+
+    async function initViewer() {
+      await init();
+      const dpr = resizeCanvas() || (window.devicePixelRatio || 1);
+      viewer = XlView.newWithOverlay
+        ? XlView.newWithOverlay(canvas, overlayCanvas, dpr)
+        : new XlView(canvas, dpr);
+      viewer.set_render_callback(requestRender);
+      requestAnimationFrame(() => {
+        resizeCanvas();
+        requestRender();
+      });
+      window.viewer = viewer;
+      return viewer;
+    }
+
+    async function loadTestFile() {
+      const response = await fetch('/test/kitchen_sink_v2.xlsx');
+      const buffer = await response.arrayBuffer();
+      const bytes = new Uint8Array(buffer);
+      viewer.load(bytes);
+      viewer.render();
+    }
+
+    (async () => {
+      debugEl.textContent = '';
+      log('Initializing viewer...');
+      await initViewer();
+      log('Loading test file...');
+      await loadTestFile();
+      log('Loaded.');
+
+      const debug = viewer.get_scroll_debug();
+      log('\\nScroll debug:');
+      log(JSON.stringify(debug, null, 2));
+    })();
+  </script>
+</body>
+</html>
