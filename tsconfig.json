@@ -12,11 +12,11 @@
     }
   },
   "include": [
+    "js/**/*.ts",
     "src/demo/**/*.ts",
     "bench/**/*.ts",
     "tests/browser/**/*.ts",
-    "tests/e2e/**/*.ts",
-    "verify_comments.ts"
+    "tests/e2e/**/*.ts"
   ],
   "exclude": ["node_modules", "bench/node_modules", "**/*.spec.ts"]
 }

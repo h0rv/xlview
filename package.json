@@ -24,8 +24,8 @@
   "license": "MIT",
   "author": "h0rv",
   "scripts": {
-    "build:wasm": "wasm-pack build --target web --release",
-    "build:wasm:dev": "wasm-pack build --target web --dev",
+    "build:wasm": "wasm-pack build --target web --release && node scripts/patch-pkg.mjs",
+    "build:wasm:dev": "wasm-pack build --target web --dev && node scripts/patch-pkg.mjs",
     "build:wasm:bundler": "wasm-pack build --target bundler --release --out-dir pkg-bundler",
     "build:wasm:nodejs": "wasm-pack build --target nodejs --release --out-dir pkg-nodejs",
     "build:ts": "node build.mjs",

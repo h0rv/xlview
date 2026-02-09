@@ -25,9 +25,7 @@ npm install xlview
 Or via CDN:
 
 ```html
-<script type="module">
-  import init, { XlView } from 'https://unpkg.com/xlview/xlview.js';
-</script>
+<script type="module" src="https://unpkg.com/xlview"></script>
 ```
 
 Or as a Rust crate (parsing only, no rendering):
@@ -38,94 +36,61 @@ cargo add xlview
 
 ## Quick Start
 
-Drop this into an HTML file:
+### Drop-in (1 line)
 
 ```html
-<div id="container" style="width: 100%; height: 600px; position: relative;">
-  <canvas id="base"></canvas>
-  <canvas id="overlay"></canvas>
-</div>
-
-<script type="module">
-  import init, { XlView } from 'xlview';
-  await init();
-
-  const base = document.getElementById('base');
-  const overlay = document.getElementById('overlay');
-  const container = document.getElementById('container');
-  const dpr = window.devicePixelRatio || 1;
-
-  // Size canvases to container
-  for (const c of [base, overlay]) {
-    c.width = container.clientWidth * dpr;
-    c.height = container.clientHeight * dpr;
-    c.style.cssText = 'position:absolute;top:0;left:0;width:100%;height:100%';
-  }
-  overlay.style.pointerEvents = 'none';
-
-  const viewer = XlView.new_with_overlay(base, overlay, dpr);
-
-  // Load a file
-  const res = await fetch('spreadsheet.xlsx');
-  viewer.load(new Uint8Array(await res.arrayBuffer()));
-  viewer.render();
-
-  // Handle resize
-  new ResizeObserver(() => {
-    const w = container.clientWidth * dpr;
-    const h = container.clientHeight * dpr;
-    base.width = w; base.height = h;
-    overlay.width = w; overlay.height = h;
-    viewer.resize(w, h, dpr);
-  }).observe(container);
-</script>
+<script type="module" src="https://unpkg.com/xlview"></script>
+<xl-view src="spreadsheet.xlsx" style="width:100%;height:600px"></xl-view>
 ```
 
-Scroll, click, keyboard, sheet tabs, and selection all work automatically.
+The `<xl-view>` custom element handles canvas setup, resize, DPR, and rendering automatically. Scroll, click, keyboard, sheet tabs, and selection all work out of the box.
 
-## React
+### Programmatic
+
+```js
+import { mount } from 'xlview';
+
+const viewer = await mount(document.getElementById('container'));
+const res = await fetch('spreadsheet.xlsx');
+viewer.load(new Uint8Array(await res.arrayBuffer()));
+```
+
+`mount()` creates canvases, wires up resize handling, and returns a controller with `load()`, `destroy()`, and the underlying `viewer` instance.
+
+### React
 
 ```tsx
 import { useEffect, useRef } from 'react';
-import init, { XlView } from 'xlview';
+import { mount, type MountedViewer } from 'xlview';
 
 export function ExcelViewer({ url }: { url: string }) {
-  const baseRef = useRef<HTMLCanvasElement>(null);
-  const overlayRef = useRef<HTMLCanvasElement>(null);
-  const viewerRef = useRef<XlView | null>(null);
+  const containerRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
-    let active = true;
+    let mounted: MountedViewer | null = null;
     (async () => {
-      await init();
-      if (!active) return;
-
-      const base = baseRef.current!;
-      const overlay = overlayRef.current!;
-      const dpr = window.devicePixelRatio || 1;
-      const w = base.clientWidth * dpr;
-      const h = base.clientHeight * dpr;
-      base.width = w; base.height = h;
-      overlay.width = w; overlay.height = h;
-
-      viewerRef.current = XlView.new_with_overlay(base, overlay, dpr);
-
+      mounted = await mount(containerRef.current!);
       const res = await fetch(url);
-      viewerRef.current.load(new Uint8Array(await res.arrayBuffer()));
-      viewerRef.current.render();
+      mounted.load(new Uint8Array(await res.arrayBuffer()));
     })();
-    return () => { active = false; viewerRef.current?.free(); };
+    return () => { mounted?.destroy(); };
   }, [url]);
 
-  const style = { position: 'absolute' as const, top: 0, left: 0, width: '100%', height: '100%' };
-
-  return (
-    <div style={{ position: 'relative', width: '100%', height: 600 }}>
-      <canvas ref={baseRef} style={style} />
-      <canvas ref={overlayRef} style={{ ...style, pointerEvents: 'none' }} />
-    </div>
-  );
+  return <div ref={containerRef} style={{ width: '100%', height: 600 }} />;
 }
+```
+
+### Full Control
+
+For custom canvas pipelines, use the WASM API directly:
+
+```js
+import init, { XlView } from 'xlview/core';
+await init();
+
+const viewer = XlView.newWithOverlay(baseCanvas, overlayCanvas, devicePixelRatio);
+viewer.load(data);
+viewer.render();
 ```
 
 ## Parse Only (No Rendering)

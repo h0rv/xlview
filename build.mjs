@@ -1,4 +1,5 @@
 import * as esbuild from 'esbuild';
+import { copyFileSync } from 'fs';
 
 const watch = process.argv.includes('--watch');
 
@@ -12,18 +13,17 @@ const shared = {
 };
 
 const entryPoints = [
-  // Demo viewer + compare
+  // Demo viewer
   { in: 'src/demo/viewer.ts', out: 'src/demo/viewer' },
-  { in: 'src/demo/compare.ts', out: 'src/demo/compare' },
   // Bench
   { in: 'bench/bench.ts', out: 'bench/bench' },
   { in: 'bench/providers/index.ts', out: 'bench/providers/index' },
   { in: 'bench/providers/xlview.ts', out: 'bench/providers/xlview' },
   { in: 'bench/providers/sheetjs.ts', out: 'bench/providers/sheetjs' },
-  // Standalone scripts
-  { in: 'verify_comments.ts', out: 'verify_comments' },
   // Browser tests
   { in: 'tests/browser/run_scroll_test.ts', out: 'tests/browser/run_scroll_test' },
+  // Public API wrapper
+  { in: 'js/xl-view.ts', out: 'pkg/xl-view' },
 ];
 
 async function build() {
@@ -36,7 +36,6 @@ async function build() {
 
     // Node scripts need node platform
     if (
-      entry.in === 'verify_comments.ts' ||
       entry.in === 'tests/browser/run_scroll_test.ts'
     ) {
       opts.platform = 'node';
@@ -51,6 +50,10 @@ async function build() {
       console.log(`Built ${entry.out}.js`);
     }
   }
+
+  // Copy type declarations that esbuild doesn't handle
+  copyFileSync('js/xl-view.d.ts', 'pkg/xl-view.d.ts');
+  console.log('Copied pkg/xl-view.d.ts');
 
   if (!watch) {
     console.log('\nAll TypeScript files compiled successfully.');

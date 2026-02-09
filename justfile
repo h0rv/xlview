@@ -12,29 +12,27 @@ default:
 # Build WASM module for development
 build-wasm:
     wasm-pack build --target web --dev
+    node scripts/patch-pkg.mjs
 
 # Build WASM module for release
 build-release:
     wasm-pack build --target web --release
+    node scripts/patch-pkg.mjs
 
 # Build TypeScript (compile .ts -> .js via esbuild)
 build-ts:
-    bun build.mjs
+    node build.mjs
 
 # Type check TypeScript
 typecheck:
-    bun run tsc --noEmit
+    npx tsc --noEmit
 
-# Format TypeScript
+# Format TypeScript (uses prettier, auto-discovers config)
 ts-fmt:
-    bun run prettier --write 'src/demo/**/*.ts' 'bench/**/*.ts' 'tests/browser/**/*.ts' 'verify_comments.ts'
+    npx prettier --write .
 
-# Lint TypeScript (type check)
-ts-lint:
-    bun run tsc --noEmit
-
-# Format + lint + build TypeScript
-ts-all: ts-fmt ts-lint build-ts
+# Format + typecheck + build TypeScript
+ts-all: ts-fmt typecheck build-ts
 
 # Build everything (WASM + TypeScript)
 build: build-wasm build-ts
@@ -51,15 +49,15 @@ fmt:
 
 # Check formatting without changes
 fmt-check:
-    cargo fmt -- --check
+    cargo fmt --all -- --check
 
-# Run clippy with strict lints on lib code
+# Run clippy (matches CI: all targets + all features)
 lint:
-    cargo clippy --lib -- -D warnings
+    cargo clippy --all-targets --all-features -- -D warnings
 
-# Run all tests
+# Run all tests (matches CI: all features)
 test:
-    cargo test --lib
+    cargo test --all-features
 
 # Run all quality checks (fmt + lint + test + typecheck)
 check: fmt-check lint test typecheck

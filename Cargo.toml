@@ -14,6 +14,7 @@ exclude = [
     # Development tooling
     "bench/",
     "docs/",
+    "js/",
     "scripts/",
     ".github/",
 
@@ -22,11 +23,8 @@ exclude = [
     "tests/",
 
     # Demo/dev files
-    "compare.html",
     "index.html",
     "justfile",
-    "verify_comments.ts",
-    "verify_comments.js",
     "build.mjs",
     "tsconfig.json",
     "src/demo/",
@@ -40,12 +38,6 @@ exclude = [
     # Generated/temp
     "pkg/",
     "target/",
-
-    # Internal docs
-    "COVERAGE.md",
-    "PUBLISHING.md",
-    "SPEC.md",
-    "TESTING.md",
 ]
 
 [lib]

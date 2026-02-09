@@ -448,7 +448,7 @@ async function runTests(): Promise<void> {
           const candidates = Array.from(document.querySelectorAll("div"));
           const container = candidates.find((d) => {
             const style = getComputedStyle(d);
-            return d.hasAttribute('data-xlview-scroll');
+            return d.hasAttribute("data-xlview-scroll");
           });
           if (!container) return null;
           const rect = canvas.getBoundingClientRect();
@@ -510,7 +510,7 @@ async function runTests(): Promise<void> {
           const candidates = Array.from(document.querySelectorAll("div"));
           const container = candidates.find((d) => {
             const style = getComputedStyle(d);
-            return d.hasAttribute('data-xlview-scroll');
+            return d.hasAttribute("data-xlview-scroll");
           });
           if (!container) {
             return {
@@ -680,7 +680,7 @@ async function runTune(): Promise<void> {
       const candidates = Array.from(document.querySelectorAll("div"));
       const container = candidates.find((d) => {
         const style = getComputedStyle(d);
-        return d.hasAttribute('data-xlview-scroll');
+        return d.hasAttribute("data-xlview-scroll");
       });
       if (!container) return { error: "scroll container not found" };
 
