@@ -1,0 +1,75 @@
+name: Deploy Demo
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: pages
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: wasm32-unknown-unknown
+
+      - uses: jetli/wasm-pack-action@v0.4.0
+        with:
+          version: latest
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          shared-key: cargo-stable
+
+      - name: Build WASM
+        run: wasm-pack build --target web --release
+
+      - name: Patch package & build TS
+        run: |
+          npm ci
+          node scripts/patch-pkg.mjs
+          node build.mjs
+
+      - name: Assemble site
+        run: |
+          mkdir -p _site/pkg _site/src/demo _site/test
+          # Demo page
+          cp index.html _site/
+          # Compiled demo JS
+          cp src/demo/viewer.js src/demo/viewer.js.map _site/src/demo/
+          cp src/demo/types.js _site/src/demo/
+          # WASM package
+          cp pkg/xlview.js pkg/xlview_bg.wasm pkg/xl-view.js _site/pkg/
+          # One sample file for instant demo
+          cp test/kitchen_sink_v2.xlsx _site/test/
+          # Trimmed manifest with just the sample
+          echo '[{"name":"kitchen_sink_v2.xlsx","description":"Charts, images, conditional formatting, and more","size":"18KB"}]' > _site/test/manifest.json
+
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: _site
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@v4
