@@ -75,6 +75,9 @@ serve:
 # Build and serve demo
 demo: build serve
 
+# Quick dev build and serve (WASM dev + TS + serve)
+dev: build-wasm build-ts serve
+
 # === E2E Testing ===
 
 # Run full E2E test suite (headless, self-contained, fast)

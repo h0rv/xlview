@@ -1086,7 +1086,14 @@ impl XlView {
         let Some(tab_bar) = &self.tab_bar else {
             return;
         };
-        let s = self.state.borrow();
+
+        // Extract data from state then drop the borrow before any DOM mutations.
+        // DOM changes (set_inner_html, append_child) can synchronously fire scroll
+        // events whose closure needs borrow_mut().
+        let (sheet_names, tab_colors, active_sheet) = {
+            let s = self.state.borrow();
+            (s.sheet_names.clone(), s.tab_colors.clone(), s.active_sheet)
+        }; // borrow dropped here — safe to mutate DOM
 
         // Clear existing tabs
         tab_bar.set_inner_html("");
@@ -1096,7 +1103,7 @@ impl XlView {
         };
 
         // Create tab buttons
-        for (i, name) in s.sheet_names.iter().enumerate() {
+        for (i, name) in sheet_names.iter().enumerate() {
             let Ok(button) = document.create_element("button") else {
                 continue;
             };
@@ -1117,7 +1124,7 @@ impl XlView {
             let _ = style.set_property("white-space", "nowrap");
 
             // Active vs inactive styles
-            if i == s.active_sheet {
+            if i == active_sheet {
                 let _ = style.set_property("background", "#FFFFFF");
                 let _ = style.set_property("font-weight", "500");
                 let _ = style.set_property("border-bottom", "2px solid #217346");
@@ -1126,7 +1133,7 @@ impl XlView {
                 let _ = style.set_property("font-weight", "normal");
 
                 // Apply custom tab color if present
-                if let Some(Some(color)) = s.tab_colors.get(i) {
+                if let Some(Some(color)) = tab_colors.get(i) {
                     let _ = style.set_property("background", color);
                 }
             }
@@ -1232,31 +1239,38 @@ impl XlView {
         let Some(spacer) = &self.scroll_spacer else {
             return;
         };
-        let s = self.state.borrow();
-        let Some(layout) = s.layouts.get(s.active_sheet) else {
-            return;
-        };
 
-        // Spacer is sized to SCROLLABLE content only (total minus frozen regions).
-        // This simplifies scroll coordinate mapping:
-        // - container.scroll_left=0 corresponds to viewport at frozen boundary
-        // - No need to add/subtract frozen offsets
-        let frozen_w = layout.frozen_cols_width();
-        let frozen_h = layout.frozen_rows_height();
-        let header_w = if s.show_headers {
-            s.header_config.row_header_width
-        } else {
-            0.0
-        };
-        let header_h = if s.show_headers {
-            s.header_config.col_header_height
-        } else {
-            0.0
-        };
-        // Add header dimensions to the scrollable range so the native scroll
-        // container can reach the true content edge.
-        let scrollable_width = (layout.total_width() - frozen_w).max(0.0) + header_w;
-        let scrollable_height = (layout.total_height() - frozen_h).max(0.0) + header_h;
+        // Compute dimensions while holding the borrow, then drop before DOM mutations.
+        // Setting scroll position fires a synchronous scroll event whose closure
+        // needs borrow_mut(), so we must not hold any borrow at that point.
+        let (scrollable_width, scrollable_height) = {
+            let s = self.state.borrow();
+            let Some(layout) = s.layouts.get(s.active_sheet) else {
+                return;
+            };
+
+            // Spacer is sized to SCROLLABLE content only (total minus frozen regions).
+            // This simplifies scroll coordinate mapping:
+            // - container.scroll_left=0 corresponds to viewport at frozen boundary
+            // - No need to add/subtract frozen offsets
+            let frozen_w = layout.frozen_cols_width();
+            let frozen_h = layout.frozen_rows_height();
+            let header_w = if s.show_headers {
+                s.header_config.row_header_width
+            } else {
+                0.0
+            };
+            let header_h = if s.show_headers {
+                s.header_config.col_header_height
+            } else {
+                0.0
+            };
+            // Add header dimensions to the scrollable range so the native scroll
+            // container can reach the true content edge.
+            let w = (layout.total_width() - frozen_w).max(0.0) + header_w;
+            let h = (layout.total_height() - frozen_h).max(0.0) + header_h;
+            (w, h)
+        }; // borrow dropped here — safe to mutate DOM
 
         let spacer_style = spacer.style();
         let _ = spacer_style.set_property("width", &format!("{}px", scrollable_width));
