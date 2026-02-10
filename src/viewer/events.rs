@@ -671,6 +671,8 @@ impl XlView {
         Self::begin_idle_prewarm(s);
         s.selection_start = None;
         s.selection_end = None;
+        s.buffer_scroll_left = 0.0;
+        s.buffer_scroll_top = 0.0;
         true
     }
 

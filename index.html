@@ -125,6 +125,10 @@
       <input type="file" id="file-input" accept=".xlsx,.xlsm,.csv,.tsv">
       + Upload your own
     </label>
+    <select id="renderer-select" style="padding: 8px 12px; border: 1px solid #ccc; border-radius: 4px; background: #fff; font-size: 14px; cursor: pointer;">
+      <option value="canvas2d" selected>Canvas 2D</option>
+      <option value="webgpu">WebGPU</option>
+    </select>
   </div>
 
   <div id="viewer-container">

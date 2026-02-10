@@ -86,6 +86,18 @@ impl Rgb {
     }
 }
 
+impl Rgb {
+    /// Convert to GPU-compatible `[f32; 4]` RGBA (opaque).
+    pub fn to_f32_array(self) -> [f32; 4] {
+        [
+            f32::from(self.r) / 255.0,
+            f32::from(self.g) / 255.0,
+            f32::from(self.b) / 255.0,
+            1.0,
+        ]
+    }
+}
+
 impl Default for Rgb {
     fn default() -> Self {
         Self::new(0, 0, 0)
@@ -206,6 +218,21 @@ fn parse_rgba_string(s: &str) -> Option<(u8, u8, u8, f64)> {
         return None;
     }
     Some((r, g, b, a))
+}
+
+/// Parse a CSS color string to `[f32; 4]` RGBA for GPU backends.
+///
+/// Supports the same formats as [`parse_color_rgba`]: hex (`#RRGGBB`,
+/// `#AARRGGBB`), `rgb()` and `rgba()`.
+pub fn parse_color_f32(s: &str) -> Option<[f32; 4]> {
+    let (r, g, b, a) = parse_color_rgba(s)?;
+    #[allow(clippy::cast_possible_truncation)]
+    Some([
+        f32::from(r) / 255.0,
+        f32::from(g) / 255.0,
+        f32::from(b) / 255.0,
+        a as f32,
+    ])
 }
 
 /// Common colors used in spreadsheet rendering (CSS format)

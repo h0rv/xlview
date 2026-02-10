@@ -44,8 +44,8 @@ const TEXT_MEASURE_CACHE_CAP: usize = 4096;
 const TEXT_WRAP_CACHE_CAP: usize = 1024;
 
 struct TextMeasureCache {
-    entries: HashMap<String, f64>,
-    order: VecDeque<String>,
+    entries: HashMap<Rc<str>, f64>,
+    order: VecDeque<Rc<str>>,
     max_entries: usize,
     scratch: String,
 }
@@ -118,9 +118,9 @@ impl TextMeasureCache {
         if self.entries.contains_key(key) {
             return;
         }
-        let key_owned = key.to_string();
-        self.entries.insert(key_owned.clone(), width);
-        self.order.push_back(key_owned);
+        let key_rc: Rc<str> = key.into();
+        self.entries.insert(Rc::clone(&key_rc), width);
+        self.order.push_back(key_rc);
         self.enforce_cap();
     }
 
@@ -150,8 +150,8 @@ impl TextMeasureCache {
 }
 
 struct TextWrapCache {
-    entries: HashMap<String, Rc<Vec<String>>>,
-    order: VecDeque<String>,
+    entries: HashMap<Rc<str>, Rc<Vec<String>>>,
+    order: VecDeque<Rc<str>>,
     max_entries: usize,
     scratch: String,
 }
@@ -194,9 +194,9 @@ impl TextWrapCache {
             return Rc::clone(existing);
         }
         let lines = Rc::new(lines);
-        let key_owned = key.to_string();
-        self.entries.insert(key_owned.clone(), Rc::clone(&lines));
-        self.order.push_back(key_owned);
+        let key_rc: Rc<str> = key.into();
+        self.entries.insert(Rc::clone(&key_rc), Rc::clone(&lines));
+        self.order.push_back(key_rc);
         self.enforce_cap();
         lines
     }
@@ -235,6 +235,17 @@ struct CacheCanvas {
     height: u32,
 }
 
+/// Look up a color in the cache, or parse and insert it.
+/// Returns `Cow::Borrowed` from the cache to avoid allocation on repeat calls.
+fn parse_color_cached<'a>(cache: &'a mut HashMap<String, String>, s: &str) -> Option<Cow<'a, str>> {
+    if cache.contains_key(s) {
+        return cache.get(s).map(|v| Cow::Borrowed(v.as_str()));
+    }
+    let css = parse_color(s)?;
+    cache.insert(s.to_string(), css);
+    cache.get(s).map(|v| Cow::Borrowed(v.as_str()))
+}
+
 /// Canvas 2D renderer implementing the RenderBackend trait
 pub struct CanvasRenderer {
     canvas: HtmlCanvasElement,
@@ -250,6 +261,8 @@ pub struct CanvasRenderer {
     text_measure_cache: TextMeasureCache,
     /// Cache for wrapped text layout (key: "font\\nwidth\\ntext")
     text_wrap_cache: TextWrapCache,
+    /// Cache for parsed CSS color strings (key: raw color spec, value: CSS color)
+    color_cache: HashMap<String, String>,
     /// Tile cache for scrollable area rendering
     tile_cache: TileCache,
     tile_cache_sheet: usize,
@@ -281,6 +294,7 @@ impl CanvasRenderer {
             image_cache: HashMap::new(),
             text_measure_cache: TextMeasureCache::new(TEXT_MEASURE_CACHE_CAP),
             text_wrap_cache: TextWrapCache::new(TEXT_WRAP_CACHE_CAP),
+            color_cache: HashMap::new(),
             tile_cache: TileCache::new(),
             tile_cache_sheet: usize::MAX,
             tile_cache_layout_ptr: 0,
@@ -299,6 +313,14 @@ impl CanvasRenderer {
         let style = self.canvas.style();
         let _ = style.set_property("width", &format!("{}px", css_w));
         let _ = style.set_property("height", &format!("{}px", css_h));
+    }
+
+    /// Reset the CSS transform on the canvas (clear scroll compensation offset).
+    pub fn reset_canvas_transform(&self) {
+        let _ = self
+            .canvas
+            .style()
+            .set_property("transform", "translate(0px, 0px)");
     }
 
     /// Helper to get crisp pixel position for 1px lines
@@ -1443,6 +1465,9 @@ impl CanvasRenderer {
     ) {
         let mut last_font = String::new();
         let mut last_color = String::new();
+        let mut font_scratch = String::with_capacity(64);
+        // Take color cache out to avoid borrow conflicts with self.ctx
+        let mut color_cache = std::mem::take(&mut self.color_cache);
 
         for &cell in cells {
             // Skip cells with no value (unless they have rich_text)
@@ -1468,30 +1493,31 @@ impl CanvasRenderer {
             let font_size = style.and_then(|s| s.font_size).unwrap_or(11.0);
             // Check if cell has hyperlink - use blue color unless overridden
             // DXF font_color takes precedence over cell style
-            let font_color = if let Some(dxf) = dxf_override {
+            let font_color: Cow<'_, str> = if let Some(dxf) = dxf_override {
                 if let Some(ref dxf_color) = dxf.font_color {
-                    parse_color(dxf_color).unwrap_or_else(|| palette::BLACK.to_string())
+                    parse_color_cached(&mut color_cache, dxf_color)
+                        .unwrap_or(Cow::Borrowed(palette::BLACK))
                 } else if cell.has_hyperlink == Some(true) {
                     style
                         .and_then(|s| s.font_color.as_ref())
-                        .and_then(|c| parse_color(c))
-                        .unwrap_or_else(|| "#0563C1".to_string())
+                        .and_then(|c| parse_color_cached(&mut color_cache, c))
+                        .unwrap_or(Cow::Borrowed("#0563C1"))
                 } else {
                     style
                         .and_then(|s| s.font_color.as_ref())
-                        .and_then(|c| parse_color(c))
-                        .unwrap_or_else(|| palette::BLACK.to_string())
+                        .and_then(|c| parse_color_cached(&mut color_cache, c))
+                        .unwrap_or(Cow::Borrowed(palette::BLACK))
                 }
             } else if cell.has_hyperlink == Some(true) {
                 style
                     .and_then(|s| s.font_color.as_ref())
-                    .and_then(|c| parse_color(c))
-                    .unwrap_or_else(|| "#0563C1".to_string()) // Excel hyperlink blue
+                    .and_then(|c| parse_color_cached(&mut color_cache, c))
+                    .unwrap_or(Cow::Borrowed("#0563C1"))
             } else {
                 style
                     .and_then(|s| s.font_color.as_ref())
-                    .and_then(|c| parse_color(c))
-                    .unwrap_or_else(|| palette::BLACK.to_string())
+                    .and_then(|c| parse_color_cached(&mut color_cache, c))
+                    .unwrap_or(Cow::Borrowed(palette::BLACK))
             };
             // Also ensure underline is set for hyperlinks or DXF override
             let has_underline = dxf_override.and_then(|d| d.underline).unwrap_or(false)
@@ -1511,20 +1537,20 @@ impl CanvasRenderer {
             let align_v = style.and_then(|s| s.align_v.as_deref()).unwrap_or("center");
             let wrap_text = style.and_then(|s| s.wrap_text).unwrap_or(false);
 
-            // Build font string
+            // Build font string using scratch buffer
             let font_style = if italic { "italic " } else { "" };
             let font_weight = if bold { "bold " } else { "" };
-            let font_string = format!(
-                "{}{}{}px {}",
-                font_style, font_weight, font_size, font_family
-            );
-            if font_string != last_font {
-                self.ctx.set_font(&font_string);
-                last_font = font_string.clone();
+            font_scratch.clear();
+            let _ = write!(font_scratch, "{}{}{}px {}", font_style, font_weight, font_size, font_family);
+            if font_scratch != last_font {
+                self.ctx.set_font(&font_scratch);
+                last_font.clear();
+                last_font.push_str(&font_scratch);
             }
-            if font_color != last_color {
+            if *font_color != *last_color {
                 self.ctx.set_fill_style_str(&font_color);
-                last_color = font_color.clone();
+                last_color.clear();
+                last_color.push_str(&font_color);
             }
 
             // Calculate indent pixels (each indent level adds 10 pixels)
@@ -1581,7 +1607,7 @@ impl CanvasRenderer {
                 // Text wrapping mode
                 let line_height = f64::from(font_size) * 1.2;
                 let cell_height = f64::from(rect.height);
-                let lines = self.wrap_text_cached(value, max_width, &font_string);
+                let lines = self.wrap_text_cached(value, max_width, &last_font);
                 let total_text_height = lines.len() as f64 * line_height;
 
                 // Calculate starting Y position based on vertical alignment
@@ -1608,7 +1634,7 @@ impl CanvasRenderer {
                         break;
                     }
 
-                    let line_width = self.measure_text_cached(line, &font_string);
+                    let line_width = self.measure_text_cached(line, &last_font);
 
                     let line_x = match align_h {
                         "center" => f64::from(sx) + (f64::from(rect.width) - line_width) / 2.0,
@@ -1647,10 +1673,10 @@ impl CanvasRenderer {
                 }
             } else {
                 // Non-wrapped text (truncate with ellipsis)
-                let display_text = self.truncate_text(value, max_width, &font_string);
+                let display_text = self.truncate_text(value, max_width, &last_font);
 
                 // Calculate text position based on alignment
-                let text_width = self.measure_text_cached(display_text.as_ref(), &font_string);
+                let text_width = self.measure_text_cached(display_text.as_ref(), &last_font);
 
                 let text_x = match align_h {
                     "center" => f64::from(sx) + (f64::from(rect.width) - text_width) / 2.0,
@@ -1720,6 +1746,9 @@ impl CanvasRenderer {
                 self.ctx.restore();
             }
         }
+
+        // Restore color cache
+        self.color_cache = color_cache;
     }
 
     fn wrap_text_cached(&mut self, text: &str, max_width: f64, font: &str) -> Rc<Vec<String>> {
