@@ -44,7 +44,7 @@ use crate::render::TextRunData;
 use crate::render::{BorderStyleData, CellRenderData, CellStyleData};
 
 #[cfg(target_arch = "wasm32")]
-use crate::render::{CanvasRenderer, RenderBackend, RenderParams};
+use crate::render::{CanvasRenderer, RenderBackend, RenderParams, Renderer};
 #[cfg(target_arch = "wasm32")]
 use crate::types::{HeaderConfig, Selection};
 use crate::types::{StyleRef, Workbook};
@@ -231,7 +231,7 @@ pub struct XlView {
     #[cfg(target_arch = "wasm32")]
     state: Rc<RefCell<SharedState>>,
     #[cfg(target_arch = "wasm32")]
-    renderer: CanvasRenderer,
+    renderer: Renderer,
     #[cfg(target_arch = "wasm32")]
     overlay_renderer: Option<CanvasRenderer>,
     #[cfg(target_arch = "wasm32")]
@@ -477,12 +477,13 @@ impl XlView {
         let physical_width = canvas.width().max(1);
         let physical_height = canvas.height().max(1);
 
-        let mut renderer =
+        let mut canvas_renderer =
             CanvasRenderer::new(canvas.clone()).map_err(|e| JsValue::from_str(&e.to_string()))?;
-        renderer
+        canvas_renderer
             .init()
             .map_err(|e| JsValue::from_str(&e.to_string()))?;
-        renderer.resize(physical_width, physical_height, dpr);
+        canvas_renderer.resize(physical_width, physical_height, dpr);
+        let renderer = Renderer::Canvas(canvas_renderer);
 
         let logical_width = physical_width as f32 / dpr;
         let logical_height = physical_height as f32 / dpr;
@@ -691,12 +692,13 @@ impl XlView {
         let physical_width = base_canvas.width().max(1);
         let physical_height = base_canvas.height().max(1);
 
-        let mut renderer = CanvasRenderer::new(base_canvas.clone())
+        let mut canvas_renderer = CanvasRenderer::new(base_canvas.clone())
             .map_err(|e| JsValue::from_str(&e.to_string()))?;
-        renderer
+        canvas_renderer
             .init()
             .map_err(|e| JsValue::from_str(&e.to_string()))?;
-        renderer.resize(physical_width, physical_height, dpr);
+        canvas_renderer.resize(physical_width, physical_height, dpr);
+        let renderer = Renderer::Canvas(canvas_renderer);
 
         let overlay_dom = overlay_canvas.clone();
         let mut overlay_renderer =
@@ -888,6 +890,216 @@ impl XlView {
             state,
             renderer,
             overlay_renderer: Some(overlay_renderer),
+            closures,
+            wheel_closure,
+            key_closure,
+            scroll_closure,
+            flex_wrapper,
+            scroll_container,
+            scroll_spacer,
+            tab_bar,
+        })
+    }
+
+    /// Create a new viewer using the wgpu/WebGPU backend.
+    ///
+    /// This is async because WebGPU adapter and device creation are async.
+    /// Falls back to Canvas 2D if WebGPU is not available.
+    #[cfg(all(feature = "wgpu-backend", target_arch = "wasm32"))]
+    #[wasm_bindgen(js_name = "newWithWgpu")]
+    pub async fn new_with_wgpu(
+        canvas: HtmlCanvasElement,
+        dpr: f32,
+    ) -> Result<XlView, JsValue> {
+        console_error_panic_hook::set_once();
+
+        let physical_width = canvas.width().max(1);
+        let physical_height = canvas.height().max(1);
+
+        let mut wgpu_renderer = crate::render::WgpuRenderer::new(canvas.clone(), dpr)
+            .await
+            .map_err(|e| JsValue::from_str(&e))?;
+        wgpu_renderer.resize(physical_width, physical_height, dpr);
+        let renderer = Renderer::Wgpu(Box::new(wgpu_renderer));
+
+        let logical_width = physical_width as f32 / dpr;
+        let logical_height = physical_height as f32 / dpr;
+
+        let viewport = Viewport {
+            scroll_x: 0.0,
+            scroll_y: 0.0,
+            width: logical_width,
+            height: logical_height.max(100.0),
+            scale: 1.0,
+            tab_scroll_x: 0.0,
+        };
+
+        let state = Rc::new(RefCell::new(SharedState {
+            workbook: None,
+            layouts: Vec::new(),
+            viewport,
+            active_sheet: 0,
+            width: physical_width,
+            height: physical_height,
+            dpr,
+            needs_render: true,
+            needs_overlay_render: false,
+            sheet_names: Vec::new(),
+            tab_colors: Vec::new(),
+            render_styles: Vec::new(),
+            default_render_style: None,
+            visible_cells: Vec::new(),
+            last_visible_row_ranges: Vec::new(),
+            last_visible_col_ranges: Vec::new(),
+            last_visible_sheet: None,
+            render_callback: None,
+            scroll_settle_timer: None,
+            scroll_settle_closure: None,
+            last_scroll_ms: 0.0,
+            prefetch_warmup_frames: 0,
+            last_base_draw_ms: 0.0,
+            selection_start: None,
+            selection_end: None,
+            is_selecting: false,
+            is_resizing: false,
+            show_headers: true,
+            header_config: HeaderConfig::default(),
+            selection: None,
+            header_drag_mode: None,
+        }));
+
+        // Set up native scrollbars (no overlay canvas for wgpu)
+        let (flex_wrapper, scroll_container, scroll_spacer, tab_bar, scroll_closure) =
+            Self::setup_native_scroll(&canvas, None, &state, logical_width, logical_height);
+
+        let tooltip: Option<HtmlElement> = web_sys::window()
+            .and_then(|window| window.document())
+            .and_then(|document| document.get_element_by_id("tooltip"))
+            .and_then(|element| element.dyn_into::<HtmlElement>().ok());
+
+        let event_target: &HtmlElement = scroll_container
+            .as_ref()
+            .map(|c| c.as_ref() as &HtmlElement)
+            .unwrap_or(&canvas);
+        let mut closures: Vec<Closure<dyn FnMut(MouseEvent)>> = Vec::new();
+
+        // Mouse down
+        {
+            let state = state.clone();
+            let container_ref = event_target.clone();
+            let closure = Closure::wrap(Box::new(move |event: MouseEvent| {
+                let rect = container_ref.get_bounding_client_rect();
+                let x = event.client_x() as f32 - rect.left() as f32;
+                let y = event.client_y() as f32 - rect.top() as f32;
+                Self::internal_mouse_down(&state, x, y);
+            }) as Box<dyn FnMut(MouseEvent)>);
+            event_target
+                .add_event_listener_with_callback("mousedown", closure.as_ref().unchecked_ref())
+                .ok();
+            closures.push(closure);
+        }
+
+        // Mouse move
+        {
+            let state = state.clone();
+            let container_for_move = event_target.clone();
+            let tooltip = tooltip.clone();
+            let closure = Closure::wrap(Box::new(move |event: MouseEvent| {
+                let rect = container_for_move.get_bounding_client_rect();
+                let x = event.client_x() as f32 - rect.left() as f32;
+                let y = event.client_y() as f32 - rect.top() as f32;
+                Self::internal_mouse_move(&state, x, y);
+                Self::update_hover_ui(
+                    &state,
+                    &container_for_move,
+                    tooltip.as_ref(),
+                    x,
+                    y,
+                    event.client_x(),
+                    event.client_y(),
+                );
+            }) as Box<dyn FnMut(MouseEvent)>);
+            event_target
+                .add_event_listener_with_callback("mousemove", closure.as_ref().unchecked_ref())
+                .ok();
+            closures.push(closure);
+        }
+
+        // Mouse up
+        {
+            let state = state.clone();
+            let closure = Closure::wrap(Box::new(move |_event: MouseEvent| {
+                Self::internal_mouse_up(&state);
+            }) as Box<dyn FnMut(MouseEvent)>);
+            event_target
+                .add_event_listener_with_callback("mouseup", closure.as_ref().unchecked_ref())
+                .ok();
+            closures.push(closure);
+        }
+
+        // Mouse leave
+        {
+            let container_for_leave = event_target.clone();
+            let tooltip = tooltip.clone();
+            let closure = Closure::wrap(Box::new(move |_event: MouseEvent| {
+                let _ = container_for_leave
+                    .style()
+                    .set_property("cursor", "default");
+                if let Some(tooltip) = tooltip.as_ref() {
+                    let _ = tooltip.style().set_property("display", "none");
+                }
+            }) as Box<dyn FnMut(MouseEvent)>);
+            event_target
+                .add_event_listener_with_callback("mouseleave", closure.as_ref().unchecked_ref())
+                .ok();
+            closures.push(closure);
+        }
+
+        // Click
+        {
+            let state = state.clone();
+            let container_ref = event_target.clone();
+            let closure = Closure::wrap(Box::new(move |event: MouseEvent| {
+                let rect = container_ref.get_bounding_client_rect();
+                let x = event.client_x() as f32 - rect.left() as f32;
+                let y = event.client_y() as f32 - rect.top() as f32;
+                Self::internal_click(&state, x, y);
+            }) as Box<dyn FnMut(MouseEvent)>);
+            event_target
+                .add_event_listener_with_callback("click", closure.as_ref().unchecked_ref())
+                .ok();
+            closures.push(closure);
+        }
+
+        let wheel_closure: Option<Closure<dyn FnMut(WheelEvent)>> = None;
+
+        let key_closure = {
+            let state = state.clone();
+            let closure = Closure::wrap(Box::new(move |event: KeyboardEvent| {
+                let key = event.key();
+                let ctrl = event.ctrl_key() || event.meta_key();
+                if Self::internal_key_down(&state, &key, ctrl) {
+                    event.prevent_default();
+                }
+            }) as Box<dyn FnMut(KeyboardEvent)>);
+
+            if let Some(window) = web_sys::window() {
+                if let Some(document) = window.document() {
+                    document
+                        .add_event_listener_with_callback(
+                            "keydown",
+                            closure.as_ref().unchecked_ref(),
+                        )
+                        .ok();
+                }
+            }
+            Some(closure)
+        };
+
+        Ok(XlView {
+            state,
+            renderer,
+            overlay_renderer: None,
             closures,
             wheel_closure,
             key_closure,

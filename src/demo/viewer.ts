@@ -9,14 +9,29 @@ const fileInput = document.getElementById("file-input") as HTMLInputElement;
 const viewerContainer = document.getElementById(
   "viewer-container",
 ) as HTMLDivElement;
-const canvas = document.getElementById("viewer-canvas") as HTMLCanvasElement;
-const overlayCanvas = document.getElementById(
+let canvas = document.getElementById("viewer-canvas") as HTMLCanvasElement;
+let overlayCanvas = document.getElementById(
   "viewer-overlay",
 ) as HTMLCanvasElement;
+const rendererSelect = document.getElementById(
+  "renderer-select",
+) as HTMLSelectElement;
 
 let viewer: XlView | null = null;
 let currentFile: File | null = null;
 let renderPending = false;
+let activeBackend: "canvas2d" | "webgpu" = "canvas2d";
+
+// Detect WebGPU support and disable option if unavailable
+if (!("gpu" in navigator)) {
+  const webgpuOption = rendererSelect?.querySelector(
+    'option[value="webgpu"]',
+  ) as HTMLOptionElement | null;
+  if (webgpuOption) {
+    webgpuOption.disabled = true;
+    webgpuOption.textContent = "WebGPU (not supported)";
+  }
+}
 
 // Resize canvases to match container.
 // The main canvas size is controlled by Rust (oversized for buffer pre-rendering).
@@ -37,10 +52,16 @@ function resizeCanvas(): number {
   const physH = Math.max(1, Math.round(height * dpr));
 
   // Overlay canvas: always viewport-sized (follows scroll via CSS transform)
-  overlayCanvas.width = physW;
-  overlayCanvas.height = physH;
-  overlayCanvas.style.width = width + "px";
-  overlayCanvas.style.height = height + "px";
+  if (activeBackend === "canvas2d") {
+    overlayCanvas.width = physW;
+    overlayCanvas.height = physH;
+    overlayCanvas.style.width = width + "px";
+    overlayCanvas.style.height = height + "px";
+    overlayCanvas.style.display = "";
+  } else {
+    // Hide overlay when using wgpu (single-pass renderer)
+    overlayCanvas.style.display = "none";
+  }
 
   // Before viewer exists, set main canvas to viewport size as a fallback.
   // Once viewer.resize() is called, Rust overrides to buffer dimensions.
@@ -77,13 +98,61 @@ function requestRender(): void {
   });
 }
 
-// Initialize viewer with Canvas 2D
+// Destroy existing viewer and reset DOM state.
+// Creates fresh canvas elements because once a canvas has a context type
+// (e.g. "2d"), it cannot be reused with a different context ("webgpu").
+function destroyViewer(): void {
+  // Remove old elements from DOM *before* freeing the viewer so that
+  // no stale events can fire on elements whose Rust closures are dropped.
+  viewerContainer.innerHTML = "";
+
+  if (viewer) {
+    viewer.free();
+    viewer = null;
+  }
+
+  // Create fresh canvas elements
+  const newCanvas = document.createElement("canvas");
+  newCanvas.id = "viewer-canvas";
+  const newOverlay = document.createElement("canvas");
+  newOverlay.id = "viewer-overlay";
+
+  viewerContainer.appendChild(newCanvas);
+  viewerContainer.appendChild(newOverlay);
+
+  canvas = newCanvas;
+  overlayCanvas = newOverlay;
+}
+
+// Initialize viewer with the selected backend
 async function initViewer(): Promise<boolean> {
   try {
     const dpr = resizeCanvas() || window.devicePixelRatio || 1;
-    viewer = XlView.newWithOverlay
-      ? XlView.newWithOverlay(canvas, overlayCanvas, dpr)
-      : new XlView(canvas, dpr);
+    const useWgpu = rendererSelect?.value === "webgpu";
+
+    if (
+      useWgpu &&
+      "gpu" in navigator &&
+      typeof (XlView as unknown as Record<string, unknown>).newWithWgpu ===
+        "function"
+    ) {
+      activeBackend = "webgpu";
+      overlayCanvas.style.display = "none";
+      viewer = await (
+        XlView as unknown as {
+          newWithWgpu: (
+            c: HTMLCanvasElement,
+            d: number,
+          ) => Promise<XlView>;
+        }
+      ).newWithWgpu(canvas, dpr);
+    } else {
+      activeBackend = "canvas2d";
+      overlayCanvas.style.display = "";
+      viewer = XlView.newWithOverlay
+        ? XlView.newWithOverlay(canvas, overlayCanvas, dpr)
+        : new XlView(canvas, dpr);
+    }
     viewer.set_render_callback(requestRender);
     // Defer resize/render to next frame to ensure DOM layout is complete
     // after setup_native_scroll moves canvases to new container
@@ -97,6 +166,22 @@ async function initViewer(): Promise<boolean> {
     return false;
   }
 }
+
+// Renderer toggle: re-create viewer with the selected backend
+rendererSelect?.addEventListener("change", async () => {
+  const savedFile = currentFile;
+  destroyViewer();
+  const success = await initViewer();
+  if (success && savedFile) {
+    try {
+      const arrayBuffer = await savedFile.arrayBuffer();
+      viewer!.load(new Uint8Array(arrayBuffer));
+      resizeCanvas();
+    } catch (err) {
+      showError(`Failed to reload file: ${(err as Error).message}`);
+    }
+  }
+});
 
 // Drag and drop on upload button
 uploadArea.addEventListener("dragover", (e: DragEvent) => {
