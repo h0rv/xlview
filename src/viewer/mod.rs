@@ -46,7 +46,7 @@ use crate::render::{BorderStyleData, CellRenderData, CellStyleData};
 #[cfg(target_arch = "wasm32")]
 use crate::render::{CanvasRenderer, RenderBackend, RenderParams, Renderer};
 #[cfg(target_arch = "wasm32")]
-use crate::types::{HeaderConfig, Selection};
+use crate::types::{CellRawValue, HeaderConfig, Selection};
 use crate::types::{StyleRef, Workbook};
 
 /// Size of the resize handle in logical pixels
@@ -2761,7 +2761,12 @@ impl XlView {
                             numfmt_cache,
                             date1904,
                         );
-                        let numeric_value = value.as_ref().and_then(|v| v.parse::<f64>().ok());
+                        let numeric_value = match &cell_data.cell.raw {
+                            Some(CellRawValue::Number(n)) | Some(CellRawValue::Date(n)) => {
+                                Some(*n)
+                            }
+                            _ => value.as_ref().and_then(|v| v.parse::<f64>().ok()),
+                        };
                         let style_override = cell_data
                             .cell
                             .s

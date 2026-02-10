@@ -625,6 +625,7 @@ impl WgpuRenderer {
                                 px + (pw - tw) / 2.0
                             }
                             Some("right") => px + pw - tw - padding,
+                            Some("left") | Some("fill") | Some("justify") | Some("distributed") => px + padding,
                             _ => {
                                 // Auto: right-align numbers, left-align text
                                 if cell.numeric_value.is_some() {
