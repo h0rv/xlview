@@ -124,6 +124,15 @@ impl Renderer {
         }
     }
 
+    /// Reset the CSS transform on the main canvas element (clear scroll compensation).
+    pub fn reset_canvas_transform(&self) {
+        match self {
+            Self::Canvas(r) => r.reset_canvas_transform(),
+            #[cfg(all(feature = "wgpu-backend", target_arch = "wasm32"))]
+            Self::Wgpu(r) => r.reset_canvas_transform(),
+        }
+    }
+
     /// Returns true if this is the wgpu backend.
     pub fn is_wgpu(&self) -> bool {
         match self {

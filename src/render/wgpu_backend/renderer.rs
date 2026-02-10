@@ -319,6 +319,14 @@ impl WgpuRenderer {
         let _ = overlay_style.set_property("height", &format!("{css_h}px"));
     }
 
+    /// Reset the CSS transform on the canvas (clear scroll compensation offset).
+    pub fn reset_canvas_transform(&self) {
+        let _ = self
+            .canvas
+            .style()
+            .set_property("transform", "translate(0px, 0px)");
+    }
+
     /// Collect geometry from render params and issue draw calls.
     #[allow(
         clippy::cast_possible_truncation,

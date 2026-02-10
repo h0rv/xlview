@@ -150,6 +150,9 @@ pub(crate) struct SharedState {
     pub(crate) header_config: HeaderConfig,
     pub(crate) selection: Option<Selection>,
     pub(crate) header_drag_mode: Option<HeaderDragMode>,
+    /// Scroll position at which the main canvas was last rendered (for CSS transform compensation).
+    pub(crate) buffer_scroll_left: f64,
+    pub(crate) buffer_scroll_top: f64,
 }
 
 /// Mode for header dragging (selecting rows/columns)
@@ -529,6 +532,8 @@ impl XlView {
             header_config: HeaderConfig::default(),
             selection: None,
             header_drag_mode: None,
+            buffer_scroll_left: 0.0,
+            buffer_scroll_top: 0.0,
         }));
 
         // Set up native scrollbars with flexbox layout BEFORE wiring mouse events,
@@ -752,6 +757,8 @@ impl XlView {
             header_config: HeaderConfig::default(),
             selection: None,
             header_drag_mode: None,
+            buffer_scroll_left: 0.0,
+            buffer_scroll_top: 0.0,
         }));
 
         // Set up native scrollbars with flexbox layout BEFORE wiring mouse events,
@@ -966,6 +973,8 @@ impl XlView {
             header_config: HeaderConfig::default(),
             selection: None,
             header_drag_mode: None,
+            buffer_scroll_left: 0.0,
+            buffer_scroll_top: 0.0,
         }));
 
         // Set up native scrollbars (no overlay canvas for wgpu)
@@ -1226,6 +1235,8 @@ impl XlView {
         let _ = canvas_style.set_property("bottom", "auto");
         let _ = canvas_style.set_property("pointer-events", "none");
         let _ = canvas_style.set_property("z-index", "0");
+        // Promote to own GPU compositor layer so CSS transform updates are cheap
+        let _ = canvas_style.set_property("will-change", "transform");
 
         if let Some(overlay) = overlay_canvas {
             let overlay_style = overlay.style();
@@ -1266,13 +1277,22 @@ impl XlView {
         }
         let _ = flex_wrapper.append_child(&tab_bar);
 
-        // Scroll event: unconditionally request render on every scroll frame.
-        // Since the canvas is viewport-sized and tiles are blitted directly,
-        // every frame must re-composite to show the correct viewport position.
+        // Scroll event: apply an instant CSS transform to the main canvas for
+        // immediate visual feedback, then schedule a full WASM re-render via RAF.
         let state_clone = state.clone();
+        let canvas_for_scroll = canvas.clone();
+        let container_for_scroll = scroll_container.clone();
         let scroll_closure = Closure::wrap(Box::new(move |_event: web_sys::Event| {
             let mut s = state_clone.borrow_mut();
             s.last_scroll_ms = now_ms();
+            // Compute scroll delta since last render and apply CSS transform
+            let cur_left = scroll_left_f64(&container_for_scroll);
+            let cur_top = scroll_top_f64(&container_for_scroll);
+            let dx = cur_left - s.buffer_scroll_left;
+            let dy = cur_top - s.buffer_scroll_top;
+            let _ = canvas_for_scroll
+                .style()
+                .set_property("transform", &format!("translate({}px, {}px)", -dx, -dy));
             s.needs_render = true;
             s.needs_overlay_render = true;
             if let Some(callback) = s.render_callback.clone() {
@@ -1433,8 +1453,12 @@ impl XlView {
         s.selection_start = None;
         s.selection_end = None;
         s.needs_render = true;
+        s.buffer_scroll_left = 0.0;
+        s.buffer_scroll_top = 0.0;
         let callback = s.render_callback.clone();
         drop(s);
+
+        self.renderer.reset_canvas_transform();
 
         // Update scroll spacer to match content size
         self.update_scroll_spacer();
@@ -1567,8 +1591,12 @@ impl XlView {
         s.selection_start = None;
         s.selection_end = None;
         s.needs_render = true;
+        s.buffer_scroll_left = 0.0;
+        s.buffer_scroll_top = 0.0;
         let callback = s.render_callback.clone();
         drop(s);
+
+        self.renderer.reset_canvas_transform();
 
         // Update scroll spacer to match content size
         self.update_scroll_spacer();
@@ -1599,6 +1627,8 @@ impl XlView {
             s.viewport.width = logical_width;
             s.viewport.height = logical_height.max(0.0);
             s.needs_render = true;
+            s.buffer_scroll_left = 0.0;
+            s.buffer_scroll_top = 0.0;
             s.render_callback.clone()
         };
 
@@ -1606,6 +1636,7 @@ impl XlView {
         self.renderer.resize(physical_width, physical_height, dpr);
         self.renderer
             .set_canvas_css_size(logical_width, logical_height);
+        self.renderer.reset_canvas_transform();
 
         // Overlay stays viewport-sized.
         if let Some(overlay) = self.overlay_renderer.as_mut() {
@@ -1940,6 +1971,8 @@ impl XlView {
             None
         })();
 
+        self.renderer.reset_canvas_transform();
+
         // Update scroll spacer for new sheet
         self.update_scroll_spacer();
 
@@ -2267,6 +2300,13 @@ impl XlView {
             if !scrolling_active && s.prefetch_warmup_frames > 0 {
                 s.prefetch_warmup_frames = s.prefetch_warmup_frames.saturating_sub(1);
             }
+            // Reset CSS transform compensation: the base canvas now reflects
+            // the current scroll position, so record it and clear the offset.
+            if let Some(container) = &self.scroll_container {
+                s.buffer_scroll_left = scroll_left_f64(container);
+                s.buffer_scroll_top = scroll_top_f64(container);
+            }
+            self.renderer.reset_canvas_transform();
         }
         let needs_prefetch_catchup = needs_base && self.renderer.has_deferred_prefetch_tiles();
         let callback = if needs_prefetch_catchup {
@@ -2504,6 +2544,12 @@ impl XlView {
             if !scrolling_active && s.prefetch_warmup_frames > 0 {
                 s.prefetch_warmup_frames = s.prefetch_warmup_frames.saturating_sub(1);
             }
+            // Reset CSS transform compensation after base render
+            if let Some(container) = &self.scroll_container {
+                s.buffer_scroll_left = scroll_left_f64(container);
+                s.buffer_scroll_top = scroll_top_f64(container);
+            }
+            self.renderer.reset_canvas_transform();
         }
 
         let needs_prefetch_catchup = needs_base && self.renderer.has_deferred_prefetch_tiles();
