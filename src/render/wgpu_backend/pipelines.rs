@@ -1,6 +1,6 @@
 //! Render pipeline creation for the wgpu backend.
 
-use super::buffers::{LineInstance, RectInstance, TextInstance};
+use super::buffers::{LineInstance, RectInstance};
 
 /// Create the rectangle render pipeline (instanced quads for cell backgrounds, etc.).
 pub fn create_rect_pipeline(
@@ -96,49 +96,3 @@ pub fn create_line_pipeline(
     })
 }
 
-/// Create the text render pipeline (textured quads sampling from the text atlas).
-pub fn create_text_pipeline(
-    device: &wgpu::Device,
-    format: wgpu::TextureFormat,
-    text_bind_group_layout: &wgpu::BindGroupLayout,
-) -> wgpu::RenderPipeline {
-    let shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
-        label: Some("text shader"),
-        source: wgpu::ShaderSource::Wgsl(include_str!("shaders/text.wgsl").into()),
-    });
-
-    device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
-        label: Some("text pipeline"),
-        layout: Some(
-            &device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
-                label: Some("text pipeline layout"),
-                bind_group_layouts: &[text_bind_group_layout],
-                immediate_size: 0,
-            }),
-        ),
-        vertex: wgpu::VertexState {
-            module: &shader,
-            entry_point: Some("vs_main"),
-            buffers: &[TextInstance::layout()],
-            compilation_options: wgpu::PipelineCompilationOptions::default(),
-        },
-        fragment: Some(wgpu::FragmentState {
-            module: &shader,
-            entry_point: Some("fs_main"),
-            targets: &[Some(wgpu::ColorTargetState {
-                format,
-                blend: Some(wgpu::BlendState::ALPHA_BLENDING),
-                write_mask: wgpu::ColorWrites::ALL,
-            })],
-            compilation_options: wgpu::PipelineCompilationOptions::default(),
-        }),
-        primitive: wgpu::PrimitiveState {
-            topology: wgpu::PrimitiveTopology::TriangleList,
-            ..Default::default()
-        },
-        depth_stencil: None,
-        multisample: wgpu::MultisampleState::default(),
-        multiview_mask: None,
-        cache: None,
-    })
-}

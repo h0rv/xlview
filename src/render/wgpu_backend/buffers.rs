@@ -30,17 +30,6 @@ pub struct LineInstance {
     pub color: [f32; 4],
 }
 
-/// Per-instance data for textured quads (text from the atlas).
-#[repr(C)]
-#[derive(Copy, Clone, Debug, Pod, Zeroable)]
-pub struct TextInstance {
-    pub pos: [f32; 2],
-    pub size: [f32; 2],
-    pub uv_pos: [f32; 2],
-    pub uv_size: [f32; 2],
-    pub color: [f32; 4],
-}
-
 /// Build an orthographic projection matrix mapping pixel coordinates to clip space.
 ///
 /// Maps `(0,0)` at top-left to `(width, height)` at bottom-right,
@@ -117,48 +106,6 @@ impl LineInstance {
                     format: wgpu::VertexFormat::Float32x4,
                     offset: 24,
                     shader_location: 3,
-                },
-            ],
-        }
-    }
-}
-
-impl TextInstance {
-    /// Vertex buffer layout for instanced attributes.
-    pub fn layout() -> wgpu::VertexBufferLayout<'static> {
-        wgpu::VertexBufferLayout {
-            array_stride: std::mem::size_of::<Self>() as wgpu::BufferAddress,
-            step_mode: wgpu::VertexStepMode::Instance,
-            attributes: &[
-                // pos
-                wgpu::VertexAttribute {
-                    format: wgpu::VertexFormat::Float32x2,
-                    offset: 0,
-                    shader_location: 0,
-                },
-                // size
-                wgpu::VertexAttribute {
-                    format: wgpu::VertexFormat::Float32x2,
-                    offset: 8,
-                    shader_location: 1,
-                },
-                // uv_pos
-                wgpu::VertexAttribute {
-                    format: wgpu::VertexFormat::Float32x2,
-                    offset: 16,
-                    shader_location: 2,
-                },
-                // uv_size
-                wgpu::VertexAttribute {
-                    format: wgpu::VertexFormat::Float32x2,
-                    offset: 24,
-                    shader_location: 3,
-                },
-                // color
-                wgpu::VertexAttribute {
-                    format: wgpu::VertexFormat::Float32x4,
-                    offset: 32,
-                    shader_location: 4,
                 },
             ],
         }
