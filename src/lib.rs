@@ -24,6 +24,7 @@ pub mod charts;
 pub mod color;
 pub mod comments;
 pub mod conditional;
+pub(crate) mod csv;
 pub mod data_validation;
 pub mod drawings;
 pub mod error;

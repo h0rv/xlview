@@ -170,8 +170,8 @@ async function loadTestFile(path: string): Promise<void> {
 }
 
 async function handleFile(file: File): Promise<void> {
-  if (!file.name.match(/\.xlsx?$/i)) {
-    showError("Please select an Excel file (.xlsx)");
+  if (!file.name.match(/\.(xlsx|xlsm|csv|tsv)$/i)) {
+    showError("Supported formats: .xlsx, .xlsm, .csv, .tsv");
     return;
   }
 

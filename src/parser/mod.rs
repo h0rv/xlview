@@ -206,14 +206,50 @@ impl ParseOptions {
     }
 }
 
-/// Parse an XLSX file from bytes (eager values for JS export compatibility).
-pub fn parse(data: &[u8]) -> Result<Workbook> {
-    parse_internal(data, None, ParseOptions::eager())
+/// Returns true if the data looks like a ZIP archive (XLSX/XLSM).
+fn is_zip(data: &[u8]) -> bool {
+    data.len() >= 4 && data.get(0..2) == Some(&[0x50, 0x4B])
 }
 
-/// Parse an XLSX file from bytes (lazy values for viewer performance).
+/// Detect whether tab-separated values are more likely than comma-separated.
+fn detect_tsv(data: &[u8]) -> bool {
+    // Check first few KB for tabs vs commas
+    let sample = if data.len() > 4096 {
+        data.get(..4096).unwrap_or(data)
+    } else {
+        data
+    };
+    let tabs = bytecount(sample, b'\t');
+    let commas = bytecount(sample, b',');
+    tabs > commas
+}
+
+fn bytecount(data: &[u8], needle: u8) -> usize {
+    data.iter().filter(|&&b| b == needle).count()
+}
+
+/// Parse a spreadsheet file from bytes (eager values for JS export compatibility).
+/// Supports XLSX, XLSM, CSV, and TSV — format is auto-detected.
+pub fn parse(data: &[u8]) -> Result<Workbook> {
+    if is_zip(data) {
+        parse_internal(data, None, ParseOptions::eager())
+    } else if detect_tsv(data) {
+        crate::csv::parse_delimited(data, crate::csv::Delimiter::Tab)
+    } else {
+        crate::csv::parse_delimited(data, crate::csv::Delimiter::Comma)
+    }
+}
+
+/// Parse a spreadsheet file from bytes (lazy values for viewer performance).
+/// Supports XLSX, XLSM, CSV, and TSV — format is auto-detected.
 pub fn parse_lazy(data: &[u8]) -> Result<Workbook> {
-    parse_internal(data, None, ParseOptions::lazy())
+    if is_zip(data) {
+        parse_internal(data, None, ParseOptions::lazy())
+    } else if detect_tsv(data) {
+        crate::csv::parse_delimited(data, crate::csv::Delimiter::Tab)
+    } else {
+        crate::csv::parse_delimited(data, crate::csv::Delimiter::Comma)
+    }
 }
 
 /// Parse an XLSX file from bytes and return detailed timing metrics (eager values).
