@@ -13,8 +13,9 @@ const shared = {
 };
 
 const entryPoints = [
-  // Demo viewer
+  // Demo viewer + editor
   { in: 'src/demo/viewer.ts', out: 'src/demo/viewer' },
+  { in: 'src/demo/editor.ts', out: 'src/demo/editor' },
   // Bench
   { in: 'bench/bench.ts', out: 'bench/bench' },
   { in: 'bench/providers/index.ts', out: 'bench/providers/index' },
@@ -22,8 +23,9 @@ const entryPoints = [
   { in: 'bench/providers/sheetjs.ts', out: 'bench/providers/sheetjs' },
   // Browser tests
   { in: 'tests/browser/run_scroll_test.ts', out: 'tests/browser/run_scroll_test' },
-  // Public API wrapper
+  // Public API wrappers
   { in: 'js/xl-view.ts', out: 'pkg/xl-view' },
+  { in: 'js/xl-edit.ts', out: 'pkg/xl-edit' },
 ];
 
 async function build() {
@@ -54,6 +56,8 @@ async function build() {
   // Copy type declarations that esbuild doesn't handle
   copyFileSync('js/xl-view.d.ts', 'pkg/xl-view.d.ts');
   console.log('Copied pkg/xl-view.d.ts');
+  copyFileSync('js/xl-edit.d.ts', 'pkg/xl-edit.d.ts');
+  console.log('Copied pkg/xl-edit.d.ts');
 
   if (!watch) {
     console.log('\nAll TypeScript files compiled successfully.');

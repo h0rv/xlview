@@ -395,6 +395,7 @@ pub(super) fn parse_sheet<R: Read + std::io::Seek>(
                         // Only do this for Start events (non-empty cells)
                         // Empty/self-closing cells like <c r="A1"/> have no child elements
                         let mut value: Option<String> = None;
+                        let mut formula_text: Option<String> = None;
                         if is_start_event {
                             loop {
                                 cell_buf.clear();
@@ -476,6 +477,15 @@ pub(super) fn parse_sheet<R: Read + std::io::Seek>(
                                                     Ok(Event::Eof) | Err(_) => break,
                                                     _ => {}
                                                 }
+                                            }
+                                        } else if inner_name == b"f" {
+                                            // Formula element <f>formula text</f>
+                                            text_buf.clear();
+                                            if let Ok(Event::Text(text)) =
+                                                xml.read_event_into(&mut text_buf)
+                                            {
+                                                formula_text =
+                                                    text.unescape().ok().map(|s| s.to_string());
                                             }
                                         }
                                     }
@@ -567,6 +577,7 @@ pub(super) fn parse_sheet<R: Read + std::io::Seek>(
                                 cached_rich_text: None,
                                 has_comment: None,
                                 hyperlink: None,
+                                formula: formula_text.take(),
                             },
                         });
                     }

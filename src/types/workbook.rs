@@ -55,6 +55,10 @@ pub struct Workbook {
     #[serde(skip)]
     #[cfg_attr(not(target_arch = "wasm32"), allow(dead_code))]
     pub(crate) numfmt_cache: Vec<CompiledFormat>,
+    /// ZIP paths matching sheets vec order (for roundtrip save).
+    #[serde(skip)]
+    #[cfg_attr(not(feature = "editing"), allow(dead_code))]
+    pub(crate) sheet_paths: Vec<String>,
 }
 
 /// Helper function for serde skip_serializing_if

@@ -50,6 +50,14 @@ pub mod layout;
 pub mod render;
 pub mod viewer;
 
+// Editing + export (behind feature flag)
+#[cfg(feature = "editing")]
+pub mod editor;
+#[cfg(feature = "editing")]
+pub mod export;
+#[cfg(feature = "editing")]
+pub use editor::XlEdit;
+
 use wasm_bindgen::prelude::*;
 
 // Re-export the main viewer struct

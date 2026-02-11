@@ -1780,6 +1780,64 @@ impl XlView {
         ])
     }
 
+    /// Get the cell at a given viewport point as `[row, col]`.
+    #[wasm_bindgen]
+    pub fn cell_at_point(&self, x: f32, y: f32) -> Option<Vec<u32>> {
+        let s = self.state.borrow();
+        match Self::hit_test(&s, x, y) {
+            HitTarget::Cell(row, col) => Some(vec![row, col]),
+            _ => None,
+        }
+    }
+
+    /// Get the on-screen rectangle for a cell as `[x, y, w, h]` in logical pixels.
+    ///
+    /// Returns `None` if no layout is loaded.
+    #[wasm_bindgen]
+    pub fn cell_rect(&self, row: u32, col: u32) -> Option<Vec<f32>> {
+        let s = self.state.borrow();
+        let layout = s.layouts.get(s.active_sheet)?;
+        let rect = layout.cell_rect(row, col);
+        if rect.skip {
+            return None;
+        }
+        // Convert from sheet coordinates to viewport coordinates
+        let header_w = if s.show_headers {
+            s.header_config.row_header_width
+        } else {
+            0.0
+        };
+        let header_h = if s.show_headers {
+            s.header_config.col_header_height
+        } else {
+            0.0
+        };
+        let vp_x = rect.x - s.viewport.scroll_x + header_w;
+        let vp_y = rect.y - s.viewport.scroll_y + header_h;
+        Some(vec![vp_x, vp_y, rect.width, rect.height])
+    }
+
+    /// Get the display value of a cell.
+    #[wasm_bindgen]
+    pub fn cell_value(&self, row: u32, col: u32) -> Option<String> {
+        let s = self.state.borrow();
+        let workbook = s.workbook.as_ref()?;
+        let sheet = workbook.sheets.get(s.active_sheet)?;
+        let idx = sheet.cell_index_at(row, col)?;
+        let cd = sheet.cells.get(idx)?;
+        cd.cell
+            .cached_display
+            .as_ref()
+            .or(cd.cell.v.as_ref())
+            .cloned()
+    }
+
+    /// Access shared state (for editor integration).
+    #[cfg(feature = "editing")]
+    pub(crate) fn shared_state(&self) -> &Rc<RefCell<SharedState>> {
+        &self.state
+    }
+
     /// Handle keyboard event (public API)
     #[wasm_bindgen]
     pub fn on_key_down(&mut self, key: &str, ctrl: bool, _shift: bool) -> bool {
@@ -2330,6 +2388,22 @@ impl XlView {
         Self::invoke_render_callback(callback);
     }
 
+    /// Invalidate all caches and re-render (call after data mutations).
+    #[cfg(feature = "editing")]
+    pub(crate) fn invalidate_data(&mut self) {
+        self.renderer.clear_tile_cache();
+        {
+            let mut s = self.state.borrow_mut();
+            s.visible_cells.clear();
+            s.last_visible_row_ranges.clear();
+            s.last_visible_col_ranges.clear();
+            s.last_visible_sheet = None;
+            s.needs_render = true;
+        }
+        let callback = { self.state.borrow().render_callback.clone() };
+        Self::invoke_render_callback(callback);
+    }
+
     /// Set whether row/column headers are visible
     #[wasm_bindgen]
     pub fn set_headers_visible(&mut self, visible: bool) {
@@ -2420,6 +2494,18 @@ impl XlView {
     #[wasm_bindgen]
     pub fn active_sheet(&self) -> usize {
         self.state.borrow().active_sheet
+    }
+
+    /// Get all sheet names.
+    #[wasm_bindgen]
+    pub fn sheet_names(&self) -> Vec<String> {
+        self.state.borrow().sheet_names.clone()
+    }
+
+    /// Get a reference to the scroll container element (for editor positioning).
+    #[cfg(feature = "editing")]
+    pub(crate) fn scroll_container_element(&self) -> Option<HtmlElement> {
+        self.scroll_container.as_ref().map(|c| c.clone().into())
     }
 
     /// Get total content width
@@ -2879,5 +2965,24 @@ impl XlView {
 
     pub fn active_sheet(&self) -> usize {
         self.active_sheet
+    }
+
+    pub fn sheet_names(&self) -> Vec<String> {
+        self.workbook
+            .as_ref()
+            .map(|w| w.sheets.iter().map(|s| s.name.clone()).collect())
+            .unwrap_or_default()
+    }
+
+    /// Mutable access to the workbook (for editor integration).
+    #[cfg(feature = "editing")]
+    pub(crate) fn workbook_mut(&mut self) -> Option<&mut Workbook> {
+        self.workbook.as_mut()
+    }
+
+    /// Immutable access to the workbook (for editor integration).
+    #[cfg(feature = "editing")]
+    pub(crate) fn workbook_ref(&self) -> Option<&Workbook> {
+        self.workbook.as_ref()
     }
 }

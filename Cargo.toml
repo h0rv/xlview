@@ -40,6 +40,10 @@ exclude = [
     "target/",
 ]
 
+[features]
+default = []
+editing = []
+
 [lib]
 crate-type = ["cdylib", "rlib"]
 
@@ -110,6 +114,10 @@ features = [
 
     # Clipboard API
     "Clipboard",
+
+    # Editing (input overlay)
+    "HtmlInputElement",
+    "FocusEvent",
 ]
 
 [dev-dependencies]

@@ -58,6 +58,7 @@ pub(crate) fn parse_delimited(data: &[u8], delim: Delimiter) -> Result<Workbook>
                     cached_rich_text: None,
                     has_comment: None,
                     hyperlink: None,
+                    formula: None,
                 },
             });
 
@@ -132,6 +133,7 @@ pub(crate) fn parse_delimited(data: &[u8], delim: Delimiter) -> Result<Workbook>
         resolved_styles: Vec::new(),
         default_style: None,
         numfmt_cache: vec![CompiledFormat::General],
+        sheet_paths: Vec::new(),
     })
 }
 

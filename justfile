@@ -75,6 +75,15 @@ serve:
 # Build and serve demo
 demo: build serve
 
+# Build with editing feature and serve editor demo
+editor-demo:
+    wasm-pack build --target web --dev -- --features editing
+    node scripts/patch-pkg.mjs
+    node build.mjs
+    @echo "Starting editor demo at http://localhost:8080/editor.html"
+    open http://localhost:8080/editor.html
+    python3 -m http.server 8080
+
 # Quick dev build and serve (WASM dev + TS + serve)
 dev: build-wasm build-ts serve
 

@@ -3243,6 +3243,14 @@ impl RenderBackend for CanvasRenderer {
     }
 }
 
+#[cfg(all(feature = "editing", target_arch = "wasm32"))]
+impl CanvasRenderer {
+    /// Clear the tile cache (call after data mutations so stale tiles are discarded).
+    pub(crate) fn clear_tile_cache(&mut self) {
+        self.tile_cache.clear();
+    }
+}
+
 #[cfg(test)]
 #[allow(
     clippy::unwrap_used,

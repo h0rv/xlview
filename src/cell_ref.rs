@@ -86,6 +86,20 @@ pub fn parse_cell_ref_bytes_or_default(ref_bytes: &[u8]) -> (u32, u32) {
     parse_cell_ref_bytes(ref_bytes).unwrap_or((0, 0))
 }
 
+/// Convert a 0-based column index to Excel column letters (A, B, ..., Z, AA, AB, ...)
+pub fn col_to_letter(col: u32) -> String {
+    let mut result = String::new();
+    let mut n = col + 1; // Convert to 1-based
+    while n > 0 {
+        n -= 1;
+        #[allow(clippy::cast_possible_truncation)]
+        let c = char::from(b'A' + (n % 26) as u8);
+        result.insert(0, c);
+        n /= 26;
+    }
+    result
+}
+
 /// Parse sqref string into a list of (start_row, start_col, end_row, end_col) ranges.
 pub fn parse_sqref(sqref: &str) -> Vec<(u32, u32, u32, u32)> {
     let mut ranges = Vec::new();

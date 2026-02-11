@@ -44,6 +44,9 @@ pub struct Cell {
     /// Hyperlink associated with this cell
     #[serde(skip_serializing_if = "Option::is_none")]
     pub hyperlink: Option<Hyperlink>,
+    /// Formula text (preserved for roundtrip save; not serialized)
+    #[serde(skip)]
+    pub formula: Option<String>,
 }
 
 #[derive(Debug, Clone)]
@@ -82,7 +85,7 @@ pub struct HyperlinkDef {
     pub hyperlink: Hyperlink,
 }
 
-#[derive(Debug, Serialize, Deserialize, Clone, Copy)]
+#[derive(Debug, Serialize, Deserialize, Clone, Copy, PartialEq, Eq)]
 pub enum CellType {
     #[serde(rename = "s")]
     String,

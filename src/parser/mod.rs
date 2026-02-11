@@ -403,6 +403,9 @@ fn parse_internal(
         .map(|info| info.compiled.clone())
         .collect();
 
+    // Collect sheet ZIP paths for roundtrip save before iterating
+    let sheet_paths: Vec<String> = sheet_info.iter().map(|si| si.path.clone()).collect();
+
     // Parse each sheet
     let mut sheets = Vec::new();
     let sheets_start = now_ms();
@@ -686,6 +689,7 @@ fn parse_internal(
         resolved_styles,
         default_style,
         numfmt_cache,
+        sheet_paths,
     })
 }
 
